@@ -1,4 +1,7 @@
 # backend/app/routes.py
+import os
+import jwt
+import datetime
 from flask import Blueprint, request, jsonify
 # import jwt # para gerar tokens no futuro
 from .models import add_user, find_user_by_email, check_password
@@ -36,15 +39,32 @@ def login():
     user = find_user_by_email(email)
 
     if user and check_password(user['password'], senha):
-        # Senha correta, gerar token JWT aqui no futuro
-        # token = jwt.encode(...)
-        return jsonify({
-            "message": "Login bem-sucedido!",
-            # "token": token,
-            "user": {
-                "nome": user['username'],
-                "email": user['email']
+        # Senha correta, gerar token JWT
+        try:
+            # Pega a chave secreta do arquivo .env
+            jwt_secret = os.getenv("JWT_SECRET")
+            if not jwt_secret:
+                return jsonify({"error": "Configuração do servidor incompleta."}), 500
+
+            # Cria o payload do token (os dados que ele carregará)
+            token_payload = {
+                'user_id': user['email'], # Usando email como identificador único
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=48) # Token expira em 48h
             }
-        }), 200
+
+            # Gera o token
+            token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
+
+            return jsonify({
+                "message": "Login bem-sucedido!",
+                "token": token,
+                "user": {
+                    "nome": user['username'],
+                    "email": user['email']
+                }
+            }), 200
+        
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
     
     return jsonify({"error": "Email ou senha inválidos."}), 401

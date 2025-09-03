@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+        }
+
+        html,
+        body,
+        #map {
+            height: 100%;
+            width: 100vw;
+        }
+
+        /* Estilos para o Dark Mode */
+        .leaflet-container.dark {
+            background: #2a2a2a;
+        }
+
+        .dark .leaflet-popup-content-wrapper,
+        .dark .leaflet-popup-tip {
+            background-color: #1c1c1c;
+            color: #eee;
+        }
+
+        .dark .leaflet-control-zoom a,
+        .dark .leaflet-control-attribution {
+            background-color: #2c2c2c;
+            color: #ccc;
+        }
+
+        /* O atribuição do CartoDB precisa de um ajuste de cor no dark mode */
+        .dark .leaflet-control-attribution a {
+            color: #aaa;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+        // --- Placeholders (sem alteração) ---
+        const userCoords = __USER_COORDS__;
+        const pollutionPoints = __POLLUTION_DATA__;
+        const showHeatmap = __SHOW_HEATMAP__;
+        const showMarkers = __SHOW_MARKERS__;
+        const mapTheme = __MAP_THEME__;
+
+        // --- Inicialização do Mapa (sem alteração) ---
+        const map = L.map('map', { zoomControl: false }).setView([userCoords.latitude, userCoords.longitude], 13);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        if (mapTheme === 'dark') {
+            L.DomUtil.addClass(map.getContainer(), 'dark');
+        }
+
+        // --- LÓGICA DE ESTILO DO MAPA (COM A CORREÇÃO) ---
+        let tileLayerUrl;
+        let attributionText = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+        if (mapTheme === 'dark') {
+            // URL para o mapa escuro e limpo (CartoDB Dark Matter)
+            tileLayerUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+        } else {
+            // URL para o mapa claro e limpo (CartoDB Positron)
+            tileLayerUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+        }
+
+        L.tileLayer(tileLayerUrl, {
+            maxZoom: 20,
+            attribution: attributionText
+        }).addTo(map);
+
+        // --- Lógica do Heatmap com mais impacto (sem alteração) ---
+        if (showHeatmap) {
+            const heatData = pollutionPoints.map(p => [p.lat, p.lng, p.intensity / 5]);
+            const heatLayer = L.heatLayer(heatData, {
+                radius: 70,       // <-- AUMENTADO: Manchas maiores e mais impactantes
+                blur: 35,         // <-- AUMENTADO: Bordas mais suaves para o novo raio
+                maxZoom: 18,
+                max: 1.0,
+                // Gradiente ajustado para ser mais forte
+                gradient: {
+                    0.3: 'blue',      // Intensidade baixa (3) começa a aparecer em azul
+                    0.5: 'lime',      // Média (5) já é verde
+                    0.7: 'yellow',    // Alta (7) já é amarela
+                    1.0: 'red'        // Máxima (10) é vermelho vivo
+                }
+            }).addTo(map);
+        }
+
+        // --- Lógica dos Marcadores (sem alteração) ---
+        if (showMarkers) {
+            const markerLayer = L.layerGroup().addTo(map);
+            pollutionPoints.forEach(function (point) {
+                let markerColor = 'red';
+                if (point.type === 'oil') markerColor = 'black';
+                if (point.type === 'garbage') markerColor = 'brown';
+
+                const svgIcon = L.divIcon({
+                    html: `<svg height="20" width="20" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8" stroke="white" stroke-width="2" fill="${markerColor}" /></svg>`,
+                    className: '',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                });
+
+                const marker = L.marker([point.lat, point.lng], { icon: svgIcon });
+                marker.bindPopup(`<b>Tipo:</b> ${point.type}<br><b>Intensidade:</b> ${point.intensity}/10`);
+                markerLayer.addLayer(marker);
+            });
+        }
+
+        L.marker([userCoords.latitude, userCoords.longitude]).addTo(map).bindPopup('Você está aqui!');
+    </script>
+</body>
+
+</html>
