@@ -3,14 +3,13 @@ import os
 import jwt
 import datetime
 from flask import Blueprint, request, jsonify
-# import jwt # para gerar tokens no futuro
-from .models import add_user, find_user_by_email, check_password
+from .database import SessionLocal
+from .models import Usuario, hash_password, check_password
 
-# Cria um Blueprint. É como um mini-app com suas próprias rotas.
-# O prefixo '/api/users' será adicionado a todas as rotas aqui.
-users_bp = Blueprint('users', __name__, url_prefix='/api/users')
+# Renomeei de 'users_bp' para 'auth_bp' para ficar mais claro
+auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-@users_bp.route('/register', methods=['POST'])
+@auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
     nome = data.get('nome')
@@ -20,14 +19,30 @@ def register():
     if not all([nome, email, senha]):
         return jsonify({"error": "Nome, email e senha são obrigatórios."}), 400
 
-    if find_user_by_email(email):
-        return jsonify({"error": "Este email já está cadastrado."}), 409
+    db = SessionLocal()
+    try:
+        # Verifica se o utilizador já existe no banco de dados
+        if db.query(Usuario).filter(Usuario.email == email).first():
+            return jsonify({"error": "Este email já está cadastrado."}), 409
 
-    new_user = add_user(nome, email, senha)
-    
-    return jsonify({"message": "Usuário criado com sucesso!", "user": {"nome": new_user['username'], "email": new_user['email']}}), 201
+        # Cria a nova instância do utilizador com a senha hasheada
+        novo_usuario = Usuario(
+            nome=nome,
+            email=email,
+            senha_hash=hash_password(senha) # Usa a função de hash de models.py
+        )
+        
+        db.add(novo_usuario)
+        db.commit()
+        
+        return jsonify({
+            "message": "Utilizador criado com sucesso!",
+            "user": {"nome": novo_usuario.nome, "email": novo_usuario.email}
+        }), 201
+    finally:
+        db.close()
 
-@users_bp.route('/login', methods=['POST'])
+@auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data.get('email')
@@ -36,35 +51,30 @@ def login():
     if not email or not senha:
         return jsonify({"error": "Email e senha são obrigatórios."}), 400
 
-    user = find_user_by_email(email)
+    db = SessionLocal()
+    try:
+        # Encontra o utilizador no banco de dados
+        user = db.query(Usuario).filter(Usuario.email == email).first()
 
-    if user and check_password(user['password'], senha):
-        # Senha correta, gerar token JWT
-        try:
-            # Pega a chave secreta do arquivo .env
+        # Verifica se o utilizador existe e se a senha está correta
+        if user and check_password(user.senha_hash, senha):
             jwt_secret = os.getenv("JWT_SECRET")
             if not jwt_secret:
                 return jsonify({"error": "Configuração do servidor incompleta."}), 500
 
-            # Cria o payload do token (os dados que ele carregará)
             token_payload = {
-                'user_id': user['email'], # Usando email como identificador único
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=48) # Token expira em 48h
+                'user_id': user.id, 
+                'email': user.email,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=48)
             }
-
-            # Gera o token
             token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
 
             return jsonify({
                 "message": "Login bem-sucedido!",
                 "token": token,
-                "user": {
-                    "nome": user['username'],
-                    "email": user['email']
-                }
+                "user": {"nome": user.nome, "email": user.email}
             }), 200
         
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    
-    return jsonify({"error": "Email ou senha inválidos."}), 401
+        return jsonify({"error": "Email ou senha inválidos."}), 401
+    finally:
+        db.close()

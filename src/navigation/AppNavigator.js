@@ -8,6 +8,7 @@ import HomeScreen from '../screens/HomeScreen';
 import MapScreen from '../screens/MapScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import MapDrawerNavigator from './MapDrawerNavigator';
 
 const Stack = createNativeStackNavigator();
 const TOKEN_KEY = 'user_jwt_token'; // Mesma chave usada no LoginScreen
@@ -50,7 +51,7 @@ export default function AppNavigator() {
                     <Stack.Screen name="Home">
                         {(props) => <HomeScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
                     </Stack.Screen>
-                    <Stack.Screen name="Map" component={MapScreen} />
+                    <Stack.Screen name="Map" component={MapDrawerNavigator} options={{ headerShown: false }} />
                 </Stack.Navigator>
             ) : (
                 <Stack.Navigator screenOptions={{ headerShown: false }}>

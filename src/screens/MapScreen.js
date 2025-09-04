@@ -1,141 +1,239 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Switch, SafeAreaView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, ActivityIndicator, Text, Switch, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
-// Ícone para o botão de tema
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
+import RNPickerSelect from 'react-native-picker-select';
 
-const MapScreen = () => {
-    const [status, setStatus] = useState({ loading: true, error: null, mapHtml: null });
+// Carrega o ficheiro HTML como um módulo estático
+const mapHtmlAsset = Asset.fromModule(require('./map.html'));
 
-    // Estados para controlar a UI
-    const [showHeatmap, setShowHeatmap] = useState(true);
-    const [showMarkers, setShowMarkers] = useState(false);
-    const [mapTheme, setMapTheme] = useState('light'); // 'light' ou 'dark'
+const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
+    // --- Estados para controlo do mapa e da UI ---
+    const [status, setStatus] = useState({ loading: true, error: null });
+    const [initialHtml, setInitialHtml] = useState(null);
+    const webviewRef = useRef(null);
+    const [isAddingMarker, setIsAddingMarker] = useState(false);
 
+    // --- Estados para o Modal de criação de marcador ---
+    const [modalVisible, setModalVisible] = useState(false);
+    const [newMarkerCoords, setNewMarkerCoords] = useState(null);
+    const [markerTipo, setMarkerTipo] = useState('');
+    const [markerIntensidade, setMarkerIntensidade] = useState('');
+    const [markerDescricao, setMarkerDescricao] = useState('');
+
+    // Efeito para carregar o template HTML inicial (corre uma vez)
     useEffect(() => {
-        const loadMap = async () => {
-            // Para não mostrar o loading toda vez que um switch muda, apenas na primeira vez
-            if (!status.mapHtml) {
-                setStatus(prev => ({ ...prev, loading: true }));
-            }
-
+        const loadHtmlTemplate = async () => {
             try {
-                // ... (código de permissão e localização continua o mesmo) ...
-                let { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
-                if (permissionStatus !== 'granted') throw new Error('A permissão para aceder à localização foi negada.');
-
-                const currentLocation = await Location.getCurrentPositionAsync({});
-                if (!currentLocation) throw new Error('Não foi possível obter a localização atual.');
-
-                const asset = Asset.fromModule(require('./map.html'));
-                await asset.downloadAsync();
-                let htmlContent = await FileSystem.readAsStringAsync(asset.localUri);
-
-                const pollutionData = [
-                    // --- Centro e Porto ---
-                    { lat: -32.0353, lng: -52.0986, intensity: 9, type: 'garbage' },        // Perto do centro
-                    { lat: -32.038, lng: -52.095, intensity: 7, type: 'microplastic' },   // Cais do Porto
-                    { lat: -32.045, lng: -52.105, intensity: 6, type: 'oil' },             // Área portuária
-                    { lat: -32.033, lng: -52.100, intensity: 8, type: 'garbage' },
-                    { lat: -32.036, lng: -52.097, intensity: 10, type: 'garbage' },       // Ponto intenso no centro
-                    { lat: -32.037, lng: -52.099, intensity: 5, type: 'microplastic' },
-                    { lat: -32.041, lng: -52.093, intensity: 7, type: 'oil' },
-                    { lat: -32.043, lng: -52.102, intensity: 9, type: 'microplastic' },
-                    { lat: -32.032, lng: -52.096, intensity: 10, type: 'garbage' },
-                    { lat: -32.040, lng: -52.108, intensity: 8, type: 'oil' },
-
-                    // --- Praia do Cassino ---
-                    { lat: -32.188, lng: -52.164, intensity: 10, type: 'microplastic' },  // Perto dos Vagonetes
-                    { lat: -32.19, lng: -52.165, intensity: 8, type: 'microplastic' },   // Orla
-                    { lat: -32.177, lng: -52.168, intensity: 5, type: 'garbage' },       // Entrada da praia
-                    { lat: -32.21, lng: -52.18, intensity: 7, type: 'garbage' },        // Mais ao sul na praia
-                    { lat: -32.291, lng: -52.260, intensity: 9, type: 'oil' },           // Perto do Navio Altair (simulando mancha)
-
-                    // --- Molhes da Barra ---
-                    { lat: -32.160, lng: -52.097, intensity: 6, type: 'microplastic' },   // Molhe Oeste
-                    { lat: -32.165, lng: -52.092, intensity: 8, type: 'garbage' },        // Arredores do molhe
-
-                    // --- Bairros Residenciais e Lagoa ---
-                    { lat: -32.05, lng: -52.13, intensity: 4, type: 'garbage' },        // Parque São Pedro
-                    { lat: -32.07, lng: -52.15, intensity: 1, type: 'oil' },             // Margem da Lagoa dos Patos
-                    { lat: -32.08, lng: -52.16, intensity: 10, type: 'microplastic' },
-                    { lat: -32.02, lng: -52.11, intensity: 3, type: 'garbage' }         // Próximo à FURG
-                ];
-
-                // Substitui todos os placeholders
-                htmlContent = htmlContent.replace(/__USER_COORDS__/g, JSON.stringify(currentLocation.coords));
-                htmlContent = htmlContent.replace(/__POLLUTION_DATA__/g, JSON.stringify(pollutionData));
-                htmlContent = htmlContent.replace(/__SHOW_HEATMAP__/g, showHeatmap);
-                htmlContent = htmlContent.replace(/__SHOW_MARKERS__/g, showMarkers);
-                htmlContent = htmlContent.replace(/__MAP_THEME__/g, `'${mapTheme}'`); // Adiciona aspas para ser uma string JS
-
-                setStatus({ loading: false, error: null, mapHtml: htmlContent });
-
+                if (!mapHtmlAsset.downloaded) {
+                    await mapHtmlAsset.downloadAsync();
+                }
+                const htmlContent = await FileSystem.readAsStringAsync(mapHtmlAsset.localUri);
+                setInitialHtml(htmlContent);
             } catch (e) {
-                console.error("Erro ao carregar o mapa:", e);
-                setStatus({ loading: false, error: e.message, mapHtml: null });
+                setStatus({ loading: false, error: 'Falha ao carregar o template do mapa.' });
             }
         };
+        loadHtmlTemplate();
+    }, []);
 
-        loadMap();
-    }, [showHeatmap, showMarkers, mapTheme]); // Re-executa quando qualquer opção muda
+    // Função para inicializar o mapa DENTRO do WebView
+    const initMapInWebView = async () => {
+        try {
+            setStatus({ loading: true, error: null });
+            let { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
+            if (permissionStatus !== 'granted') throw new Error('A permissão para aceder à localização foi negada.');
 
-    const toggleTheme = () => {
-        setMapTheme(currentTheme => (currentTheme === 'light' ? 'dark' : 'light'));
+            const currentLocation = await Location.getCurrentPositionAsync({});
+            if (!currentLocation) throw new Error('Não foi possível obter a localização atual.');
+
+            const response = await fetch('http://192.168.8.62:5000/api/marcacoes');
+            if (!response.ok) {
+                throw new Error('Falha ao buscar os dados de poluição do servidor.');
+            }
+
+            const pollutionData = await response.json();
+
+            const initialData = {
+                userCoords: currentLocation.coords,
+                pollutionPoints: pollutionData,
+            };
+
+            webviewRef.current?.injectJavaScript(`window.init(${JSON.stringify(initialData)}); true;`);
+            setStatus({ loading: false, error: null });
+        } catch (e) {
+            console.error("Erro na inicialização do mapa:", e);
+            setStatus({ loading: false, error: e.message });
+        }
+    };
+
+    // Efeitos para enviar comandos para o WebView quando os switches mudam
+    useEffect(() => {
+        webviewRef.current?.injectJavaScript(`toggleAddMarkerMode(${isAddingMarker}); true;`);
+    }, [isAddingMarker]);
+
+    useEffect(() => {
+        // O código para atualizar o mapa agora usa as props
+        webviewRef.current?.injectJavaScript(`
+            setHeatmapVisible(${showHeatmap});
+            setMarkersVisible(${showMarkers});
+            setTheme('${mapTheme}');
+            true;
+        `);
+    }, [showHeatmap, showMarkers, mapTheme]);
+
+
+    // --- Funções para o fluxo de criação de marcador ---
+
+    const updateWebViewVisuals = () => {
+        webviewRef.current?.injectJavaScript(`
+            setHeatmapVisible(${showHeatmap});
+            setMarkersVisible(${showMarkers});
+            setTheme('${mapTheme}');
+            true;
+        `);
+    };
+
+    const onMapMarkerAdded = (coords) => {
+        setNewMarkerCoords(coords);
+        setModalVisible(true);
+        setIsAddingMarker(false);
+    };
+
+    const handleSaveMarker = async () => {
+        const intensidade = parseInt(markerIntensidade, 10);
+        if (!markerTipo || isNaN(intensidade) || intensidade < 1 || intensidade > 10) {
+            Alert.alert("Erro de Validação", "Por favor, preencha o tipo e uma intensidade de 1 a 10.");
+            return;
+        }
+
+        const marcacaoData = {
+            latitude: newMarkerCoords.lat,
+            longitude: newMarkerCoords.lng,
+            tipo_poluicao: markerTipo,
+            intensidade: intensidade,
+            descricao: markerDescricao,
+            imagem_url: null
+        };
+
+        await sendMarkerToAPI(marcacaoData);
+    };
+
+    const sendMarkerToAPI = async (data) => {
+        try {
+            const token = await SecureStore.getItemAsync('user_jwt_token');
+            if (!token) {
+                Alert.alert("Erro", "Você não está logado.");
+                return;
+            }
+
+            // IMPORTANTE: Substitua pelo seu IP real
+            const response = await fetch('http://192.168.8.62:5000/api/marcacoes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(data)
+            });
+
+            const responseData = await response.json();
+
+            if (response.ok) {
+                Alert.alert("Sucesso", "Marcação criada com sucesso!");
+                setModalVisible(false);
+                setMarkerTipo('');
+                setMarkerIntensidade('');
+                setMarkerDescricao('');
+                initMapInWebView();
+            } else {
+                throw new Error(responseData.error || "Não foi possível criar a marcação");
+            }
+        } catch (error) {
+            Alert.alert("Erro de Rede", error.message);
+        }
     };
 
     // --- Lógica de Renderização ---
-    if (status.loading) {
-        return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color="#0000ff" />
-                <Text>A carregar mapa...</Text>
-            </View>
-        );
-    }
-
-    if (status.error) {
-        return (
-            <View style={styles.center}>
-                <Text>Ocorreu um erro:</Text>
-                <Text>{status.error}</Text>
-            </View>
-        );
+    if (!initialHtml) {
+        return <View style={styles.center}><ActivityIndicator size="large" /><Text>A preparar mapa...</Text></View>;
     }
 
     return (
         <SafeAreaView style={styles.container}>
-            {status.mapHtml && (
-                <WebView
-                    originWhitelist={['*']}
-                    source={{ html: status.mapHtml }}
-                    style={styles.webview}
-                />
-            )}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={modalVisible}
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalView}>
+                        <Text style={styles.modalTitle}>Adicionar Marcação</Text>
 
-            {/* Botão para alternar o tema do mapa */}
-            <TouchableOpacity style={styles.themeButton} onPress={toggleTheme}>
-                <MaterialCommunityIcons
-                    name={mapTheme === 'light' ? "weather-night" : "weather-sunny"}
-                    size={24}
-                    color="white"
-                />
+                        <View style={pickerSelectStyles.container}>
+                            <RNPickerSelect
+                                onValueChange={(value) => setMarkerTipo(value)}
+                                items={[
+                                    { label: 'Microplástico', value: 'microplastic' },
+                                    { label: 'Lixo (Geral)', value: 'garbage' },
+                                    { label: 'Óleo', value: 'oil' },
+                                ]}
+                                style={pickerSelectStyles}
+                                placeholder={{ label: "Selecione um tipo de poluição...", value: null }}
+                                value={markerTipo}
+                            />
+                        </View>
+                        <TextInput
+                            placeholder="Intensidade (1-10)"
+                            style={styles.input}
+                            value={markerIntensidade}
+                            onChangeText={setMarkerIntensidade}
+                            keyboardType="numeric"
+                        />
+                        <TextInput
+                            placeholder="Descrição (opcional)"
+                            style={styles.input}
+                            value={markerDescricao}
+                            onChangeText={setMarkerDescricao}
+                            multiline
+                        />
+
+                        <View style={styles.buttonRow}>
+                            <Button title="Cancelar" onPress={() => setModalVisible(false)} color="red" />
+                            <Button title="Salvar" onPress={handleSaveMarker} />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            <WebView
+                ref={webviewRef}
+                originWhitelist={['*']}
+                source={{ html: initialHtml }}
+                style={styles.webview}
+                onLoadEnd={initMapInWebView}
+                onMessage={(event) => {
+                    try {
+                        const data = JSON.parse(event.nativeEvent.data);
+                        if (data.type === 'marker_added') {
+                            onMapMarkerAdded(data.payload);
+                        } else {
+                            console.log(`[WebView ${data.type.toUpperCase()}]:`, ...data.payload);
+                        }
+                    } catch (e) { console.log('[WebView Raw]:', event.nativeEvent.data); }
+                }}
+            />
+
+            {status.loading && (<View style={styles.loadingOverlay}><ActivityIndicator size="large" color="#FFF" /></View>)}
+            {status.error && (<View style={styles.errorOverlay}><Text style={styles.errorText}>{status.error}</Text></View>)}
+
+            <TouchableOpacity style={[styles.actionButton, { bottom: 120, backgroundColor: isAddingMarker ? '#c0392b' : '#2980b9' }]} onPress={() => setIsAddingMarker(!isAddingMarker)}>
+                <MaterialCommunityIcons name={isAddingMarker ? "close" : "plus"} size={24} color="white" />
             </TouchableOpacity>
 
-            {/* Painel de Controlo */}
-            <View style={styles.controls}>
-                <View style={styles.controlItem}>
-                    <Text>Mostrar Mapa de Calor</Text>
-                    <Switch value={showHeatmap} onValueChange={setShowHeatmap} />
-                </View>
-                <View style={styles.controlItem}>
-                    <Text>Mostrar Pontos Individuais</Text>
-                    <Switch value={showMarkers} onValueChange={setShowMarkers} />
-                </View>
-            </View>
+
         </SafeAreaView>
     );
 };
@@ -143,17 +241,45 @@ const MapScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    webview: { flex: 1 },
+    webview: { flex: 1, backgroundColor: '#333' },
+    loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    errorOverlay: { position: 'absolute', top: 50, left: 10, right: 10, padding: 10, backgroundColor: 'rgba(255, 0, 0, 0.8)', borderRadius: 5 },
+    errorText: { color: 'white', textAlign: 'center' },
     controls: { backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: 10, borderTopWidth: 1, borderColor: '#ccc' },
     controlItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
-    themeButton: {
-        position: 'absolute',
-        top: 60,
-        right: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        borderRadius: 20,
-        padding: 8,
-        zIndex: 10, // Garante que o botão fique sobre o mapa
+    themeButton: { position: 'absolute', top: 60, right: 20, backgroundColor: 'rgba(0, 0, 0, 0.5)', borderRadius: 20, padding: 8, zIndex: 10 },
+    actionButton: { position: 'absolute', right: 20, borderRadius: 30, padding: 12, zIndex: 10, elevation: 5 },
+    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalView: { width: '80%', backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
+    input: { width: '100%', height: 40, borderColor: 'gray', borderWidth: 1, borderRadius: 5, marginBottom: 10, paddingHorizontal: 10 },
+    buttonRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 20 },
+});
+
+const pickerSelectStyles = StyleSheet.create({
+    container: {
+        width: '100%',
+        marginBottom: 10,
+    },
+    inputIOS: {
+        fontSize: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 10,
+        borderWidth: 1,
+        borderColor: 'gray',
+        borderRadius: 5,
+        color: 'black',
+        paddingRight: 30, // para garantir que o texto não fique debaixo da seta
+    },
+    inputAndroid: {
+        fontSize: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderWidth: 1,
+        borderColor: 'gray',
+        borderRadius: 5,
+        color: 'black',
+        paddingRight: 30, // para garantir que o tex§§§to não fique debaixo da seta
     },
 });
 

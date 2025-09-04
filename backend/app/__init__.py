@@ -2,7 +2,8 @@
 from flask import Flask
 from flask_cors import CORS
 from .models import bcrypt
-from .routes import users_bp
+from .routes import auth_bp
+from .marcacoes_routes import marcacoes_bp
 
 def create_app():
     app = Flask(__name__)
@@ -12,7 +13,8 @@ def create_app():
     bcrypt.init_app(app)
 
     # Registra o Blueprint de rotas de usuário
-    app.register_blueprint(users_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(marcacoes_bp)
 
     # Rota de teste
     @app.route('/')
