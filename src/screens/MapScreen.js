@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Switch, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, Switch, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Asset } from 'expo-asset';
@@ -7,6 +7,7 @@ import * as FileSystem from 'expo-file-system';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import RNPickerSelect from 'react-native-picker-select';
+import * as ImagePicker from 'expo-image-picker';
 
 // Carrega o ficheiro HTML como um módulo estático
 const mapHtmlAsset = Asset.fromModule(require('./map.html'));
@@ -24,6 +25,8 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
     const [markerTipo, setMarkerTipo] = useState('');
     const [markerIntensidade, setMarkerIntensidade] = useState('');
     const [markerDescricao, setMarkerDescricao] = useState('');
+
+    const [markerImage, setMarkerImage] = useState(null);
 
     // Efeito para carregar o template HTML inicial (corre uma vez)
     useEffect(() => {
@@ -71,6 +74,19 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
         }
     };
 
+    const pickImage = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.25, // Reduz a qualidade para uploads mais rápidos
+        });
+
+        if (!result.canceled) {
+            setMarkerImage(result.assets[0]); // Guarda o objeto da imagem
+        }
+    };
+
     // Efeitos para enviar comandos para o WebView quando os switches mudam
     useEffect(() => {
         webviewRef.current?.injectJavaScript(`toggleAddMarkerMode(${isAddingMarker}); true;`);
@@ -111,16 +127,56 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
             return;
         }
 
-        const marcacaoData = {
-            latitude: newMarkerCoords.lat,
-            longitude: newMarkerCoords.lng,
-            tipo_poluicao: markerTipo,
-            intensidade: intensidade,
-            descricao: markerDescricao,
-            imagem_url: null
-        };
+        try {
+            let imageUrl = null;
+            if (markerImage) {
+                Alert.alert("Aguarde", "A enviar imagem...");
+                const uploadedUrl = await uploadImage(markerImage);
+                imageUrl = uploadedUrl;
+            }
 
-        await sendMarkerToAPI(marcacaoData);
+            const marcacaoData = {
+                latitude: newMarkerCoords.lat,
+                longitude: newMarkerCoords.lng,
+                tipo_poluicao: markerTipo,
+                intensidade: intensidade,
+                descricao: markerDescricao,
+                imagem_url: imageUrl,
+            };
+
+            await sendMarkerToAPI(marcacaoData);
+
+        } catch (error) {
+            Alert.alert("Erro", error.message);
+        }
+    };
+
+    const uploadImage = async (imageAsset) => {
+        const token = await SecureStore.getItemAsync('user_jwt_token');
+        const apiUrl = 'http://192.168.8.62:5000/api/upload';
+
+        // O FormData é necessário para enviar ficheiros
+        const formData = new FormData();
+        formData.append('file', {
+            uri: imageAsset.uri,
+            name: `photo_${Date.now()}.jpg`,
+            type: 'image/jpeg',
+        });
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                //'Content-Type': 'multipart/form-data',
+            },
+            body: formData,
+        });
+
+        const responseData = await response.json();
+        if (!response.ok) {
+            console.error("Erro no upload:", responseData);
+            throw new Error(responseData.error || "Falha no upload da imagem.");
+        }
+        return responseData.image_url;
     };
 
     const sendMarkerToAPI = async (data) => {
@@ -131,7 +187,6 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
                 return;
             }
 
-            // IMPORTANTE: Substitua pelo seu IP real
             const response = await fetch('http://192.168.8.62:5000/api/marcacoes', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -200,6 +255,11 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
                             multiline
                         />
 
+                        <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+                            <Text>Adicionar Foto</Text>
+                        </TouchableOpacity>
+                        {markerImage && <Image source={{ uri: markerImage.uri }} style={styles.previewImage} />}
+
                         <View style={styles.buttonRow}>
                             <Button title="Cancelar" onPress={() => setModalVisible(false)} color="red" />
                             <Button title="Salvar" onPress={handleSaveMarker} />
@@ -254,6 +314,21 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
     input: { width: '100%', height: 40, borderColor: 'gray', borderWidth: 1, borderRadius: 5, marginBottom: 10, paddingHorizontal: 10 },
     buttonRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 20 },
+    imagePicker: {
+        width: '100%',
+        padding: 10,
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 5,
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    previewImage: {
+        width: 100,
+        height: 100,
+        borderRadius: 5,
+        marginBottom: 15,
+    },
 });
 
 const pickerSelectStyles = StyleSheet.create({

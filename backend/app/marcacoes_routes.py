@@ -32,7 +32,7 @@ def get_all_marcacoes():
         db.close()
 
 @marcacoes_bp.route('/', methods=['POST'])
-@token_required # <-- A MÁGICA ACONTECE AQUI! Esta rota é protegida.
+@token_required # <-- Rota protegida.
 def create_marcacao(current_user):
     """
     Rota para criar uma nova marcação.
