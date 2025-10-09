@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, func
 from sqlalchemy.orm import relationship
 from flask_bcrypt import Bcrypt
 from .database import Base # Importa a Base declarativa do nosso ficheiro de base de dados
@@ -30,6 +30,7 @@ class Marcacao(Base):
     imagem_url = Column(String, nullable=True)
     intensidade = Column(Integer, nullable=False)
     descricao = Column(String, nullable=True)
+    data_criacao = Column(DateTime(timezone=True), server_default=func.now())
     
     # Chave estrangeira para o ID do utilizador
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)

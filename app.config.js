@@ -38,6 +38,9 @@ export default {
                     apiKey: process.env.Maps_API_KEY
                 }
             },
+
+            "usesCleartextTraffic": true,
+
             adaptiveIcon: {
                 foregroundImage: "./assets/adaptive-icon.png", // Mantido do seu app.json original
                 backgroundColor: "#ffffff" // Mantido do seu app.json original

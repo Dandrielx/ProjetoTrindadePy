@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Switch, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, Image } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, Switch, TouchableOpacity, Modal, TextInput, Button, Alert, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import RNPickerSelect from 'react-native-picker-select';
@@ -12,7 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 // Carrega o ficheiro HTML como um módulo estático
 const mapHtmlAsset = Asset.fromModule(require('./map.html'));
 
-const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
+const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     // --- Estados para controlo do mapa e da UI ---
     const [status, setStatus] = useState({ loading: true, error: null });
     const [initialHtml, setInitialHtml] = useState(null);
@@ -47,29 +48,106 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
     // Função para inicializar o mapa DENTRO do WebView
     const initMapInWebView = async () => {
         try {
+            // Mostra o indicador de carregamento
             setStatus({ loading: true, error: null });
+
+            // Pede permissão de localização
             let { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
-            if (permissionStatus !== 'granted') throw new Error('A permissão para aceder à localização foi negada.');
+            if (permissionStatus !== 'granted') {
+                throw new Error('A permissão para aceder à localização foi negada.');
+            }
 
+            // Obtém a localização atual do utilizador
             const currentLocation = await Location.getCurrentPositionAsync({});
-            if (!currentLocation) throw new Error('Não foi possível obter a localização atual.');
+            if (!currentLocation) {
+                throw new Error('Não foi possível obter a localização atual.');
+            }
 
-            const response = await fetch('http://192.168.8.62:5000/api/marcacoes');
+            // Constrói a URL da API com os filtros
+            // A classe URLSearchParams é a forma mais segura de construir query strings
+            const params = new URLSearchParams();
+            if (filters.startDate) {
+                params.append('start_date', filters.startDate);
+            }
+            if (filters.endDate) {
+                params.append('end_date', filters.endDate);
+            }
+            if (filters.types && filters.types.length > 0) {
+                params.append('types', filters.types.join(','));
+            }
+
+            const queryString = params.toString();
+
+            // Lembre-se de confirmar que o seu IP está correto aqui
+            const apiUrl = `http://192.168.8.62:5000/api/marcacoes?${queryString}`;
+
+            // Busca os dados de poluição da sua API
+            const response = await fetch(apiUrl);
             if (!response.ok) {
                 throw new Error('Falha ao buscar os dados de poluição do servidor.');
             }
-
             const pollutionData = await response.json();
 
+            // Prepara os dados para injetar no WebView
             const initialData = {
                 userCoords: currentLocation.coords,
                 pollutionPoints: pollutionData,
             };
 
-            webviewRef.current?.injectJavaScript(`window.init(${JSON.stringify(initialData)}); true;`);
+            // Injeta os dados na função 'init' do HTML
+            // O `true;` no final é uma boa prática para o injectJavaScript no Android
+            webviewRef.current?.injectJavaScript(`
+                window.init(${JSON.stringify(initialData)});
+                true; 
+            `);
+
+            // Esconde o indicador de carregamento
             setStatus({ loading: false, error: null });
         } catch (e) {
+            // Em caso de erro, mostra a mensagem de erro
             console.error("Erro na inicialização do mapa:", e);
+            setStatus({ loading: false, error: e.message });
+        }
+    };
+
+    // Função que inicializa ou atualiza o mapa com dados
+    const updateMapData = async () => {
+        if (!webviewRef.current) return;
+
+        try {
+            setStatus(prev => ({ ...prev, loading: true, error: null }));
+
+            const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
+            if (permissionStatus !== 'granted') throw new Error('A permissão para aceder à localização foi negada.');
+
+            const currentLocation = await Location.getCurrentPositionAsync({});
+            if (!currentLocation) throw new Error('Não foi possível obter a localização atual.');
+
+            const params = new URLSearchParams();
+            if (filters.startDate) params.append('start_date', filters.startDate);
+            if (filters.endDate) params.append('end_date', filters.endDate);
+            if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
+
+            const queryString = params.toString();
+            const apiUrl = `http://192.168.8.62:5000/api/marcacoes?${queryString}`;
+
+            const response = await fetch(apiUrl);
+            if (!response.ok) throw new Error('Falha ao buscar dados do servidor.');
+
+            const pollutionData = await response.json();
+
+            // CORREÇÃO: Passa o estado atual dos switches para a função init
+            const initialData = {
+                userCoords: currentLocation.coords,
+                pollutionPoints: pollutionData,
+                showHeatmap: showHeatmap,
+                showMarkers: showMarkers
+            };
+
+            webviewRef.current.injectJavaScript(`window.init(${JSON.stringify(initialData)}); true;`);
+            setStatus(prev => ({ ...prev, loading: false }));
+        } catch (e) {
+            console.error("Erro ao atualizar o mapa:", e);
             setStatus({ loading: false, error: e.message });
         }
     };
@@ -93,7 +171,6 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
     }, [isAddingMarker]);
 
     useEffect(() => {
-        // O código para atualizar o mapa agora usa as props
         webviewRef.current?.injectJavaScript(`
             setHeatmapVisible(${showHeatmap});
             setMarkersVisible(${showMarkers});
@@ -101,6 +178,12 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
             true;
         `);
     }, [showHeatmap, showMarkers, mapTheme]);
+
+    useEffect(() => {
+        if (initialHtml) { // Só executa se o HTML do webview já estiver carregado
+            updateMapData(); // Esta função busca os dados da API usando os filtros
+        }
+    }, [filters, initialHtml]); // Reage à mudança dos filtros (e à primeira carga do HTML)
 
 
     // --- Funções para o fluxo de criação de marcador ---
@@ -217,63 +300,14 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={modalVisible}
-                onRequestClose={() => setModalVisible(false)}
-            >
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalView}>
-                        <Text style={styles.modalTitle}>Adicionar Marcação</Text>
-
-                        <View style={pickerSelectStyles.container}>
-                            <RNPickerSelect
-                                onValueChange={(value) => setMarkerTipo(value)}
-                                items={[
-                                    { label: 'Microplástico', value: 'microplastic' },
-                                    { label: 'Lixo (Geral)', value: 'garbage' },
-                                    { label: 'Óleo', value: 'oil' },
-                                ]}
-                                style={pickerSelectStyles}
-                                placeholder={{ label: "Selecione um tipo de poluição...", value: null }}
-                                value={markerTipo}
-                            />
-                        </View>
-                        <TextInput
-                            placeholder="Intensidade (1-10)"
-                            style={styles.input}
-                            value={markerIntensidade}
-                            onChangeText={setMarkerIntensidade}
-                            keyboardType="numeric"
-                        />
-                        <TextInput
-                            placeholder="Descrição (opcional)"
-                            style={styles.input}
-                            value={markerDescricao}
-                            onChangeText={setMarkerDescricao}
-                            multiline
-                        />
-
-                        <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
-                            <Text>Adicionar Foto</Text>
-                        </TouchableOpacity>
-                        {markerImage && <Image source={{ uri: markerImage.uri }} style={styles.previewImage} />}
-
-                        <View style={styles.buttonRow}>
-                            <Button title="Cancelar" onPress={() => setModalVisible(false)} color="red" />
-                            <Button title="Salvar" onPress={handleSaveMarker} />
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* ... (O seu Modal completo aqui) ... */}
 
             <WebView
                 ref={webviewRef}
                 originWhitelist={['*']}
                 source={{ html: initialHtml }}
                 style={styles.webview}
-                onLoadEnd={initMapInWebView}
+                onLoadEnd={updateMapData}
                 onMessage={(event) => {
                     try {
                         const data = JSON.parse(event.nativeEvent.data);
@@ -289,14 +323,13 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme }) => {
             {status.loading && (<View style={styles.loadingOverlay}><ActivityIndicator size="large" color="#FFF" /></View>)}
             {status.error && (<View style={styles.errorOverlay}><Text style={styles.errorText}>{status.error}</Text></View>)}
 
-            <TouchableOpacity style={[styles.actionButton, { bottom: 120, backgroundColor: isAddingMarker ? '#c0392b' : '#2980b9' }]} onPress={() => setIsAddingMarker(!isAddingMarker)}>
+            <TouchableOpacity style={[styles.actionButton, { bottom: 20, backgroundColor: isAddingMarker ? '#c0392b' : '#2980b9' }]} onPress={() => setIsAddingMarker(!isAddingMarker)}>
                 <MaterialCommunityIcons name={isAddingMarker ? "close" : "plus"} size={24} color="white" />
             </TouchableOpacity>
-
-
         </SafeAreaView>
     );
 };
+
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
