@@ -5,6 +5,7 @@ import datetime
 from flask import Blueprint, request, jsonify
 from .database import SessionLocal
 from .models import Usuario, hash_password, check_password
+from .auth import token_required
 
 # Renomeei de 'users_bp' para 'auth_bp' para ficar mais claro
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
@@ -65,7 +66,7 @@ def login():
             token_payload = {
                 'user_id': user.id, 
                 'email': user.email,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=48)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
             }
             token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
 
@@ -78,3 +79,13 @@ def login():
         return jsonify({"error": "Email ou senha inválidos."}), 401
     finally:
         db.close()
+        
+@auth_bp.route('/validate-token', methods=['GET'])
+@token_required
+def validate_token(current_user):
+    # Se o decorator @token_required passar, o token é válido.
+    # Retornamos os dados do usuário para o app poder usá-los se quiser.
+    return jsonify({
+        "message": "Token é válido.",
+        "user": {"nome": current_user.nome, "email": current_user.email}
+    }), 200

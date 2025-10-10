@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Switch, TouchableOpacity, Modal, TextInput, Button, Alert, Image } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -7,27 +7,22 @@ import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
-import RNPickerSelect from 'react-native-picker-select';
-import * as ImagePicker from 'expo-image-picker';
 
-// Carrega o ficheiro HTML como um módulo estático
+// Importe o novo componente Modal
+import AddMarkerModal from '../components/AddMarkerModal';
+
+// Carrega o ficheiro HTML
 const mapHtmlAsset = Asset.fromModule(require('./map.html'));
 
 const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
-    // --- Estados para controlo do mapa e da UI ---
     const [status, setStatus] = useState({ loading: true, error: null });
     const [initialHtml, setInitialHtml] = useState(null);
     const webviewRef = useRef(null);
     const [isAddingMarker, setIsAddingMarker] = useState(false);
 
-    // --- Estados para o Modal de criação de marcador ---
+    // Estados para controlar o Modal
     const [modalVisible, setModalVisible] = useState(false);
     const [newMarkerCoords, setNewMarkerCoords] = useState(null);
-    const [markerTipo, setMarkerTipo] = useState('');
-    const [markerIntensidade, setMarkerIntensidade] = useState('');
-    const [markerDescricao, setMarkerDescricao] = useState('');
-
-    const [markerImage, setMarkerImage] = useState(null);
 
     // Efeito para carregar o template HTML inicial (corre uma vez)
     useEffect(() => {
@@ -44,6 +39,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         };
         loadHtmlTemplate();
     }, []);
+
 
     // Função para inicializar o mapa DENTRO do WebView
     const initMapInWebView = async () => {
@@ -63,21 +59,12 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                 throw new Error('Não foi possível obter a localização atual.');
             }
 
-            // Constrói a URL da API com os filtros
-            // A classe URLSearchParams é a forma mais segura de construir query strings
             const params = new URLSearchParams();
-            if (filters.startDate) {
-                params.append('start_date', filters.startDate);
-            }
-            if (filters.endDate) {
-                params.append('end_date', filters.endDate);
-            }
-            if (filters.types && filters.types.length > 0) {
-                params.append('types', filters.types.join(','));
-            }
+            if (filters.startDate) params.append('start_date', filters.startDate);
+            if (filters.endDate) params.append('end_date', filters.endDate);
+            if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
 
             const queryString = params.toString();
-
             // Lembre-se de confirmar que o seu IP está correto aqui
             const apiUrl = `http://192.168.8.62:5000/api/marcacoes?${queryString}`;
 
@@ -92,19 +79,17 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
             const initialData = {
                 userCoords: currentLocation.coords,
                 pollutionPoints: pollutionData,
+                showHeatmap: showHeatmap,
+                showMarkers: showMarkers
             };
 
-            // Injeta os dados na função 'init' do HTML
-            // O `true;` no final é uma boa prática para o injectJavaScript no Android
             webviewRef.current?.injectJavaScript(`
                 window.init(${JSON.stringify(initialData)});
                 true; 
             `);
 
-            // Esconde o indicador de carregamento
             setStatus({ loading: false, error: null });
         } catch (e) {
-            // Em caso de erro, mostra a mensagem de erro
             console.error("Erro na inicialização do mapa:", e);
             setStatus({ loading: false, error: e.message });
         }
@@ -136,7 +121,6 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
             const pollutionData = await response.json();
 
-            // CORREÇÃO: Passa o estado atual dos switches para a função init
             const initialData = {
                 userCoords: currentLocation.coords,
                 pollutionPoints: pollutionData,
@@ -149,19 +133,6 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         } catch (e) {
             console.error("Erro ao atualizar o mapa:", e);
             setStatus({ loading: false, error: e.message });
-        }
-    };
-
-    const pickImage = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.25, // Reduz a qualidade para uploads mais rápidos
-        });
-
-        if (!result.canceled) {
-            setMarkerImage(result.assets[0]); // Guarda o objeto da imagem
         }
     };
 
@@ -188,46 +159,22 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
     // --- Funções para o fluxo de criação de marcador ---
 
-    const updateWebViewVisuals = () => {
-        webviewRef.current?.injectJavaScript(`
-            setHeatmapVisible(${showHeatmap});
-            setMarkersVisible(${showMarkers});
-            setTheme('${mapTheme}');
-            true;
-        `);
-    };
-
     const onMapMarkerAdded = (coords) => {
         setNewMarkerCoords(coords);
         setModalVisible(true);
-        setIsAddingMarker(false);
+        setIsAddingMarker(false); // Desativa o modo de adição após o clique
     };
 
-    const handleSaveMarker = async () => {
-        const intensidade = parseInt(markerIntensidade, 10);
-        if (!markerTipo || isNaN(intensidade) || intensidade < 1 || intensidade > 10) {
-            Alert.alert("Erro de Validação", "Por favor, preencha o tipo e uma intensidade de 1 a 10.");
-            return;
-        }
-
+    const handleSaveMarker = async (marcacaoData, imageAsset) => {
         try {
-            let imageUrl = null;
-            if (markerImage) {
+            let finalData = { ...marcacaoData };
+            if (imageAsset) {
                 Alert.alert("Aguarde", "A enviar imagem...");
-                const uploadedUrl = await uploadImage(markerImage);
-                imageUrl = uploadedUrl;
+                const uploadedUrl = await uploadImage(imageAsset);
+                finalData.imagem_url = uploadedUrl;
             }
 
-            const marcacaoData = {
-                latitude: newMarkerCoords.lat,
-                longitude: newMarkerCoords.lng,
-                tipo_poluicao: markerTipo,
-                intensidade: intensidade,
-                descricao: markerDescricao,
-                imagem_url: imageUrl,
-            };
-
-            await sendMarkerToAPI(marcacaoData);
+            await sendMarkerToAPI(finalData);
 
         } catch (error) {
             Alert.alert("Erro", error.message);
@@ -236,20 +183,19 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
     const uploadImage = async (imageAsset) => {
         const token = await SecureStore.getItemAsync('user_jwt_token');
-        const apiUrl = 'http://192.168.8.62:5000/api/upload';
+        const apiUrl = 'http://192.168.8.62:5000/api/upload/';
 
-        // O FormData é necessário para enviar ficheiros
         const formData = new FormData();
         formData.append('file', {
             uri: imageAsset.uri,
             name: `photo_${Date.now()}.jpg`,
             type: 'image/jpeg',
         });
+
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                //'Content-Type': 'multipart/form-data',
             },
             body: formData,
         });
@@ -270,7 +216,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                 return;
             }
 
-            const response = await fetch('http://192.168.8.62:5000/api/marcacoes', {
+            const response = await fetch('http://192.168.8.62:5000/api/marcacoes/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(data)
@@ -280,11 +226,8 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
             if (response.ok) {
                 Alert.alert("Sucesso", "Marcação criada com sucesso!");
-                setModalVisible(false);
-                setMarkerTipo('');
-                setMarkerIntensidade('');
-                setMarkerDescricao('');
-                initMapInWebView();
+                setModalVisible(false); // Fecha o modal
+                initMapInWebView(); // Atualiza o mapa para mostrar o novo ponto
             } else {
                 throw new Error(responseData.error || "Não foi possível criar a marcação");
             }
@@ -300,7 +243,16 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* ... (O seu Modal completo aqui) ... */}
+
+            {/* Renderiza o componente do Modal quando houver coordenadas */}
+            {newMarkerCoords && (
+                <AddMarkerModal
+                    visible={modalVisible}
+                    onClose={() => setModalVisible(false)}
+                    onSave={handleSaveMarker}
+                    initialCoords={newMarkerCoords}
+                />
+            )}
 
             <WebView
                 ref={webviewRef}
@@ -314,9 +266,13 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                         if (data.type === 'marker_added') {
                             onMapMarkerAdded(data.payload);
                         } else {
+                            // Log para outras mensagens vindas do WebView
                             console.log(`[WebView ${data.type.toUpperCase()}]:`, ...data.payload);
                         }
-                    } catch (e) { console.log('[WebView Raw]:', event.nativeEvent.data); }
+                    } catch (e) {
+                        // Log para mensagens que não são JSON
+                        console.log('[WebView Raw]:', event.nativeEvent.data);
+                    }
                 }}
             />
 

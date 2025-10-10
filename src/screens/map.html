@@ -62,9 +62,36 @@
 
         function setHeatmapVisible(visible) { if (map && heatLayer) { if (visible && !map.hasLayer(heatLayer)) map.addLayer(heatLayer); if (!visible && map.hasLayer(heatLayer)) map.removeLayer(heatLayer); } }
         function setMarkersVisible(visible) { if (map && markerLayer) { if (visible && !map.hasLayer(markerLayer)) map.addLayer(markerLayer); if (!visible && map.hasLayer(markerLayer)) map.removeLayer(markerLayer); } }
-        function setTheme(theme) { /* ... (sem alterações) ... */ }
-        function toggleAddMarkerMode(enable) { /* ... (sem alterações) ... */ }
-        function onMapClick(e) { /* ... (sem alterações) ... */ }
+
+        // Função de Tema
+        function setTheme(theme) {
+            const mapContainer = document.getElementById('map');
+            if (theme === 'dark') {
+                mapContainer.classList.add('dark');
+                tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
+            } else {
+                mapContainer.classList.remove('dark');
+                tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png');
+            }
+        }
+
+        // Função para ligar/desligar o modo de adição de marcador
+        function toggleAddMarkerMode(enable) {
+            const mapContainer = document.getElementById('map');
+            if (enable) {
+                mapContainer.classList.add('crosshair-cursor');
+                map.on('click', onMapClick);
+            } else {
+                mapContainer.classList.remove('crosshair-cursor');
+                map.off('click', onMapClick);
+            }
+        }
+
+        // Função chamada quando o mapa é clicado no modo de adição
+        function onMapClick(e) {
+            postMessage('marker_added', e.latlng);
+        }
+
 
         function init(initialData) {
             try {
@@ -97,7 +124,7 @@
                     markerLayer.addLayer(marker);
                 });
 
-                // --- CORREÇÃO FINAL: ADICIONA AS NOVAS CAMADAS AO MAPA ---
+                // Adiciona as camadas ao mapa
                 if (showHeatmap) {
                     map.addLayer(heatLayer);
                 }

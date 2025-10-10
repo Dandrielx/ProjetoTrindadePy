@@ -9,6 +9,7 @@ import MapScreen from '../screens/MapScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import MapDrawerNavigator from './MapDrawerNavigator';
+import { API_BASE_URL } from '../config/api';
 
 const Stack = createNativeStackNavigator();
 const TOKEN_KEY = 'user_jwt_token'; // Mesma chave usada no LoginScreen
@@ -22,9 +23,21 @@ export default function AppNavigator() {
             try {
                 const token = await SecureStore.getItemAsync(TOKEN_KEY);
                 if (token) {
-                    // Aqui você poderia adicionar uma verificação de validade do token com o backend
-                    // Por enquanto, se o token existir, consideramos logado
-                    setIsLoggedIn(true);
+                    const response = await fetch(`${API_BASE_URL}/validate-token`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        // Se a resposta for OK, o token é válido.
+                        setIsLoggedIn(true);
+                    } else {
+                        // Se não, o token é inválido/expirado, removemos ele.
+                        await SecureStore.deleteItemAsync(TOKEN_KEY);
+                        setIsLoggedIn(false);
+                    }
                 }
             } catch (e) {
                 console.error("Erro ao buscar token", e);
