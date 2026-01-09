@@ -5,14 +5,15 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const TOKEN_KEY = 'user_jwt_token';
 
-// Paleta (Mantenha consistente com o Login)
+// Paleta (Mantida consistente)
 const COLORS = {
     primary: '#81C784',
     primaryDark: '#2E7D32',
     background: '#FFFFFF',
     text: '#333',
     cardBg: '#F5F5F5',
-    danger: '#e57373'
+    danger: '#e57373',
+    stats: '#4DB6AC' // Cor secundária para o novo botão
 };
 
 export default function HomeScreen({ navigation, setIsLoggedIn }) {
@@ -35,28 +36,41 @@ export default function HomeScreen({ navigation, setIsLoggedIn }) {
             </View>
 
             <View style={styles.content}>
+                {/* Botão do Mapa */}
                 <TouchableOpacity
                     style={styles.mapCard}
                     onPress={() => navigation.navigate('Map')}
-                    activeOpacity={0.8}
                 >
                     <View style={styles.cardIconContainer}>
-                        <MaterialCommunityIcons name="map-search-outline" size={40} color="#FFF" />
+                        <MaterialCommunityIcons name="map-marker-radius" size={32} color="#FFF" />
                     </View>
                     <View style={styles.cardTextContainer}>
-                        <Text style={styles.cardTitle}>Abrir Mapa</Text>
-                        <Text style={styles.cardDesc}>Visualizar e adicionar pontos de poluição</Text>
+                        <Text style={styles.cardTitle}>Mapa de Poluição</Text>
+                        <Text style={styles.cardDesc}>Visualize pontos e calor</Text>
                     </View>
-                    <MaterialCommunityIcons name="chevron-right" size={24} color={COLORS.primaryDark} />
+                    <MaterialCommunityIcons name="chevron-right" size={24} color="#CCC" />
                 </TouchableOpacity>
 
-                {/* Aqui você pode adicionar mais cards futuramente (ex: Estatísticas, Perfil) */}
+                {/* NOVO BOTÃO: Estatísticas */}
+                <TouchableOpacity
+                    style={styles.mapCard}
+                    onPress={() => navigation.navigate('Statistics')}
+                >
+                    <View style={[styles.cardIconContainer, { backgroundColor: COLORS.stats }]}>
+                        <MaterialCommunityIcons name="chart-bar" size={32} color="#FFF" />
+                    </View>
+                    <View style={styles.cardTextContainer}>
+                        <Text style={styles.cardTitle}>Estatísticas</Text>
+                        <Text style={styles.cardDesc}>Gráficos e dados analíticos</Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={24} color="#CCC" />
+                </TouchableOpacity>
             </View>
 
             <View style={styles.footer}>
                 <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                    <MaterialCommunityIcons name="logout" size={20} color={COLORS.danger} style={{ marginRight: 8 }} />
-                    <Text style={styles.logoutText}>Sair da conta</Text>
+                    <MaterialCommunityIcons name="logout" size={20} color={COLORS.danger} />
+                    <Text style={styles.logoutText}>Sair da Conta</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -76,8 +90,8 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.cardBg,
         padding: 20,
         borderRadius: 20,
-        elevation: 2, // Android shadow
-        shadowColor: "#000", // iOS shadow
+        elevation: 2,
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -96,9 +110,9 @@ const styles = StyleSheet.create({
     },
     cardTextContainer: { flex: 1 },
     cardTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
-    cardDesc: { fontSize: 12, color: '#888', marginTop: 2 },
+    cardDesc: { fontSize: 14, color: '#888', marginTop: 2 },
 
-    footer: { marginBottom: 30, alignItems: 'center' },
-    logoutButton: { flexDirection: 'row', alignItems: 'center', padding: 15 },
-    logoutText: { color: COLORS.danger, fontSize: 16, fontWeight: '600' }
+    footer: { paddingBottom: 20, alignItems: 'center' },
+    logoutButton: { flexDirection: 'row', alignItems: 'center', padding: 10 },
+    logoutText: { color: COLORS.danger, fontWeight: 'bold', marginLeft: 8, fontSize: 16 }
 });

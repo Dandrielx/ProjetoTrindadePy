@@ -8,7 +8,8 @@ import {
     StyleSheet,
     Image,
     ScrollView,
-    ActivityIndicator
+    ActivityIndicator,
+    Switch
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,6 +33,8 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords }) => {
     const [description, setDescription] = useState('');
     const [image, setImage] = useState(null);
     const [loadingImage, setLoadingImage] = useState(false);
+    const [isWater, setIsWater] = useState(false);
+    const [localType, setLocalType] = useState('unico');
 
     // Reseta os campos quando o modal abre
     useEffect(() => {
@@ -59,28 +62,33 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords }) => {
     };
 
     const handleSave = () => {
-        // Prepara os dados
+        // Proteção extra: se initialCoords vier com lat/lng, ele mapeia corretamente
+        const lat = initialCoords.latitude || initialCoords.lat;
+        const lng = initialCoords.longitude || initialCoords.lng;
+
+        if (!lat || !lng) {
+            alert("Erro: Coordenadas não encontradas.");
+            return;
+        }
+
         const markerData = {
-            latitude: initialCoords.latitude,
-            longitude: initialCoords.longitude,
+            latitude: lat,
+            longitude: lng,
             tipo_poluicao: type,
             intensidade: parseInt(intensity),
             descricao: description,
+            agua: isWater,           // Campo novo do backend
+            tipo_local: localType    // Campo novo do backend
         };
-        // Chama a função do pai
+
+        console.log("Objeto enviado ao onSave:", markerData);
         onSave(markerData, image);
     };
 
     return (
-        <Modal
-            animationType="fade"
-            transparent={true}
-            visible={visible}
-            onRequestClose={onClose}
-        >
+        <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
             <View style={styles.overlay}>
                 <View style={styles.modalContainer}>
-                    {/* Header do Modal */}
                     <View style={styles.header}>
                         <Text style={styles.title}>Nova Ocorrência</Text>
                         <TouchableOpacity onPress={onClose}>
@@ -90,35 +98,72 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords }) => {
 
                     <ScrollView contentContainerStyle={styles.content}>
 
-                        <Text style={styles.label}>Tipo de Poluição</Text>
+                        {/* CAMPO: AGUA OU TERRA */}
+                        <View style={styles.switchRow}>
+                            <View>
+                                <Text style={styles.label}>Encontrado na água?</Text>
+                                <Text style={styles.subLabel}>{isWater ? "Sim (Mar/Rio)" : "Não (Praia/Terra)"}</Text>
+                            </View>
+                            <Switch
+                                value={isWater}
+                                onValueChange={setIsWater}
+                                trackColor={{ false: "#DDD", true: "#A5D6A7" }}
+                                thumbColor={isWater ? COLORS.primary : "#f4f3f4"}
+                            />
+                        </View>
+
+                        {/* CAMPO: TIPO DE LOCAL (Lixo Único ou Área Suja) */}
+                        <Text style={styles.label}>Formato da Poluição</Text>
+                        <View style={styles.toggleContainer}>
+                            <TouchableOpacity
+                                style={[styles.toggleBtn, localType === 'unico' && styles.toggleBtnActive]}
+                                onPress={() => setLocalType('unico')}
+                            >
+                                <MaterialCommunityIcons
+                                    name="package-variant"
+                                    size={20}
+                                    color={localType === 'unico' ? "#FFF" : COLORS.primary}
+                                />
+                                <Text style={[styles.toggleText, localType === 'unico' && styles.toggleTextActive]}>Item Único</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.toggleBtn, localType === 'sujo' && styles.toggleBtnActive]}
+                                onPress={() => setLocalType('sujo')}
+                            >
+                                <MaterialCommunityIcons
+                                    name="image-filter-hdr" // Nome correto corrigido
+                                    size={20}
+                                    color={localType === 'sujo' ? "#FFF" : COLORS.primary}
+                                />
+                                <Text style={[styles.toggleText, localType === 'sujo' && styles.toggleTextActive]}>Local Sujo</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.label}>Tipo de Poluente</Text>
                         <View style={styles.pickerContainer}>
                             <Picker
                                 selectedValue={type}
-                                onValueChange={(itemValue) => setType(itemValue)}
+                                onValueChange={(v) => setType(v)}
                                 style={styles.picker}
                             >
-                                <Picker.Item label="Lixo Plástico" value="lixo" />
+                                <Picker.Item label="Lixo (Geral)" value="lixo" />
                                 <Picker.Item label="Óleo / Químico" value="oleo" />
-                                <Picker.Item label="Rede de Pesca" value="rede" />
-                                <Picker.Item label="Outros" value="outros" />
+                                <Picker.Item label="Plástico" value="plastico" />
                             </Picker>
                         </View>
 
                         <Text style={styles.label}>Intensidade (1 a 10)</Text>
                         <View style={styles.intensityContainer}>
                             <Text style={styles.intensityValue}>{intensity}</Text>
-                            <View style={{ flex: 1, paddingLeft: 10 }}>
-                                {/* Slider Simulado (ou use @react-native-community/slider) */}
-                                <TextInput
-                                    style={styles.input}
-                                    keyboardType="numeric"
-                                    value={intensity}
-                                    onChangeText={(v) => {
-                                        if (v === '' || (parseInt(v) >= 1 && parseInt(v) <= 10)) setIntensity(v);
-                                    }}
-                                    placeholder="1-10"
-                                />
-                            </View>
+                            <TextInput
+                                style={[styles.input, { flex: 1, marginLeft: 10 }]}
+                                keyboardType="numeric"
+                                value={intensity}
+                                onChangeText={(v) => {
+                                    if (v === '' || (parseInt(v) >= 1 && parseInt(v) <= 10)) setIntensity(v);
+                                }}
+                            />
                         </View>
 
                         <Text style={styles.label}>Descrição (Opcional)</Text>
@@ -126,7 +171,6 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords }) => {
                             style={[styles.input, styles.textArea]}
                             placeholder="Descreva o local..."
                             multiline
-                            numberOfLines={3}
                             value={description}
                             onChangeText={setDescription}
                         />
@@ -141,17 +185,13 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords }) => {
                                     <Text style={styles.placeholderText}>Adicionar Foto</Text>
                                 </View>
                             )}
-                            {loadingImage && <ActivityIndicator style={styles.loading} color={COLORS.primary} />}
                         </TouchableOpacity>
-
                     </ScrollView>
 
-                    {/* Footer com Botões */}
                     <View style={styles.footer}>
                         <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
                             <Text style={[styles.buttonText, styles.cancelText]}>Cancelar</Text>
                         </TouchableOpacity>
-
                         <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
                             <Text style={styles.buttonText}>Salvar</Text>
                         </TouchableOpacity>
@@ -254,6 +294,22 @@ const styles = StyleSheet.create({
         height: '100%',
         resizeMode: 'cover'
     },
+    // Estilos do seletor de tipo de local (Toggle Buttons)
+    toggleContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+    toggleBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: COLORS.primary,
+        marginHorizontal: 5
+    },
+    toggleBtnActive: { backgroundColor: COLORS.primary },
+    toggleText: { marginLeft: 8, fontWeight: '600', color: COLORS.primary },
+    toggleTextActive: { color: '#FFF' },
     footer: {
         flexDirection: 'row',
         padding: 20,

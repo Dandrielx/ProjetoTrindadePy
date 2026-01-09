@@ -167,7 +167,13 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     // --- Funções para o fluxo de criação de marcador ---
 
     const onMapMarkerAdded = (coords) => {
-        setNewMarkerCoords(coords);
+        // Normaliza as coordenadas para o formato esperado pelo backend e pelo Modal
+        const normalizedCoords = {
+            latitude: coords.latitude || coords.lat,
+            longitude: coords.longitude || coords.lng
+        };
+        console.log("Coordenadas Normalizadas para o Modal:", normalizedCoords); // Check no log do VSCode
+        setNewMarkerCoords(normalizedCoords);
         setModalVisible(true);
         setIsAddingMarker(false);
     };

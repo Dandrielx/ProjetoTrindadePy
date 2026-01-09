@@ -54,6 +54,8 @@ def get_all_marcacoes():
                 "lng": marcacao.longitude,
                 "intensity": marcacao.intensidade,
                 "type": marcacao.tipo_poluicao,
+                "agua": marcacao.agua,
+                "tipo_local": marcacao.tipo_local,
                 "description": marcacao.descricao,
                 "image_url": marcacao.imagem_url,
                 "data_criacao": marcacao.data_criacao.isoformat() if marcacao.data_criacao else None
@@ -76,20 +78,26 @@ def create_marcacao(current_user):
     """
     data = request.get_json()
     
-    # Validação dos dados recebidos
-    required_fields = ['latitude', 'longitude', 'intensidade', 'tipo_poluicao']
-    if not all(field in data for field in required_fields):
-        return jsonify({"error": "Dados em falta"}), 400
+    # LOG DE DEPURAÇÃO: Verifique no terminal o que o front está enviando
+    print(f"Dados recebidos no POST: {data}")
+
+    # Campos obrigatórios (incluí os novos já que são nullable=False no banco)
+    required_fields = ['latitude', 'longitude', 'intensidade', 'tipo_poluicao', 'agua', 'tipo_local']
+    
+    if not data or not all(field in data for field in required_fields):
+        # Retorna quais campos estão faltando para facilitar o seu debug
+        missing = [f for f in required_fields if f not in (data or {})]
+        return jsonify({"error": "Dados em falta", "missing_fields": missing}), 400
 
     db = SessionLocal()
     try:
-
-
         nova_marcacao = Marcacao(
             latitude=data['latitude'],
             longitude=data['longitude'],
             intensidade=data['intensidade'],
             tipo_poluicao=data['tipo_poluicao'],
+            agua=data['agua'],
+            tipo_local=data['tipo_local'],
             descricao=data.get('descricao'), # .get() para campos opcionais
             imagem_url=data.get('imagem_url'),
             usuario_id=current_user.id

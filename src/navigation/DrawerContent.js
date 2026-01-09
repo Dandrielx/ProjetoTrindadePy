@@ -5,9 +5,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 const POLLUTANT_TYPES = [
-    { label: 'Microplástico', value: 'microplastic' },
-    { label: 'Lixo (Geral)', value: 'garbage' },
-    { label: 'Óleo', value: 'oil' },
+    { label: 'Plástico', value: 'plastico' },
+    { label: 'Lixo (Geral)', value: 'lixo' },
+    { label: 'Óleo', value: 'oleo' },
 ];
 
 const THEME_COLOR = '#81C784'; // Verde Pastel

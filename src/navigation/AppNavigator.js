@@ -9,6 +9,7 @@ import MapScreen from '../screens/MapScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import MapDrawerNavigator from './MapDrawerNavigator';
+import StatisticsScreen from '../screens/StatisticsScreen';
 import { API_BASE_URL } from '../config/api';
 
 const Stack = createNativeStackNavigator();
@@ -65,6 +66,11 @@ export default function AppNavigator() {
                         {(props) => <HomeScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
                     </Stack.Screen>
                     <Stack.Screen name="Map" component={MapDrawerNavigator} options={{ headerShown: false }} />
+                    <Stack.Screen
+                        name="Statistics"
+                        component={StatisticsScreen}
+                        options={{ title: 'Estatísticas' }}
+                    />
                 </Stack.Navigator>
             ) : (
                 <Stack.Navigator screenOptions={{ headerShown: false }}>
