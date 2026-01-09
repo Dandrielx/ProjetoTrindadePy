@@ -1,18 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy'; // Mantido import legacy para compatibilidade
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
+import { API_BASE_URL } from '../config/api';
 
 // Importe o novo componente Modal
 import AddMarkerModal from '../components/AddMarkerModal';
 
 // Carrega o ficheiro HTML
 const mapHtmlAsset = Asset.fromModule(require('./map.html'));
+
+// Paleta de Cores Moderna
+const COLORS = {
+    primary: '#81C784',      // Verde Pastel
+    primaryDark: '#388E3C',  // Verde Escuro para contraste
+    accent: '#4DB6AC',
+    danger: '#e57373',       // Vermelho suave
+    white: '#FFFFFF',
+    overlay: 'rgba(255, 255, 255, 0.95)',
+    shadow: '#000'
+};
 
 const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     const [status, setStatus] = useState({ loading: true, error: null });
@@ -24,7 +35,10 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     const [modalVisible, setModalVisible] = useState(false);
     const [newMarkerCoords, setNewMarkerCoords] = useState(null);
 
-    // Efeito para carregar o template HTML inicial (corre uma vez)
+    // URL Base para facilitar manutenção (mesmo IP do seu arquivo original)
+    const API_URL = `${API_BASE_URL}/api`;
+
+    // Efeito para carregar o template HTML inicial
     useEffect(() => {
         const loadHtmlTemplate = async () => {
             try {
@@ -40,20 +54,16 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         loadHtmlTemplate();
     }, []);
 
-
     // Função para inicializar o mapa DENTRO do WebView
     const initMapInWebView = async () => {
         try {
-            // Mostra o indicador de carregamento
             setStatus({ loading: true, error: null });
 
-            // Pede permissão de localização
             let { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
             if (permissionStatus !== 'granted') {
                 throw new Error('A permissão para aceder à localização foi negada.');
             }
 
-            // Obtém a localização atual do utilizador
             const currentLocation = await Location.getCurrentPositionAsync({});
             if (!currentLocation) {
                 throw new Error('Não foi possível obter a localização atual.');
@@ -65,17 +75,14 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
             if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
 
             const queryString = params.toString();
-            // Lembre-se de confirmar que o seu IP está correto aqui
-            const apiUrl = `http://192.168.8.62:5000/api/marcacoes?${queryString}`;
+            const apiUrl = `${API_URL}/marcacoes?${queryString}`;
 
-            // Busca os dados de poluição da sua API
             const response = await fetch(apiUrl);
             if (!response.ok) {
                 throw new Error('Falha ao buscar os dados de poluição do servidor.');
             }
             const pollutionData = await response.json();
 
-            // Prepara os dados para injetar no WebView
             const initialData = {
                 userCoords: currentLocation.coords,
                 pollutionPoints: pollutionData,
@@ -114,7 +121,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
             if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
 
             const queryString = params.toString();
-            const apiUrl = `http://192.168.8.62:5000/api/marcacoes?${queryString}`;
+            const apiUrl = `${API_URL}/marcacoes?${queryString}`;
 
             const response = await fetch(apiUrl);
             if (!response.ok) throw new Error('Falha ao buscar dados do servidor.');
@@ -136,7 +143,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         }
     };
 
-    // Efeitos para enviar comandos para o WebView quando os switches mudam
+    // Efeitos para enviar comandos para o WebView
     useEffect(() => {
         webviewRef.current?.injectJavaScript(`toggleAddMarkerMode(${isAddingMarker}); true;`);
     }, [isAddingMarker]);
@@ -151,10 +158,10 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     }, [showHeatmap, showMarkers, mapTheme]);
 
     useEffect(() => {
-        if (initialHtml) { // Só executa se o HTML do webview já estiver carregado
-            updateMapData(); // Esta função busca os dados da API usando os filtros
+        if (initialHtml) {
+            updateMapData();
         }
-    }, [filters, initialHtml]); // Reage à mudança dos filtros (e à primeira carga do HTML)
+    }, [filters, initialHtml]);
 
 
     // --- Funções para o fluxo de criação de marcador ---
@@ -162,7 +169,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     const onMapMarkerAdded = (coords) => {
         setNewMarkerCoords(coords);
         setModalVisible(true);
-        setIsAddingMarker(false); // Desativa o modo de adição após o clique
+        setIsAddingMarker(false);
     };
 
     const handleSaveMarker = async (marcacaoData, imageAsset) => {
@@ -183,7 +190,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
     const uploadImage = async (imageAsset) => {
         const token = await SecureStore.getItemAsync('user_jwt_token');
-        const apiUrl = 'http://192.168.8.62:5000/api/upload/';
+        const uploadUrl = `${API_URL}/upload/`;
 
         const formData = new FormData();
         formData.append('file', {
@@ -192,7 +199,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
             type: 'image/jpeg',
         });
 
-        const response = await fetch(apiUrl, {
+        const response = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -216,7 +223,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                 return;
             }
 
-            const response = await fetch('http://192.168.8.62:5000/api/marcacoes/', {
+            const response = await fetch(`${API_URL}/marcacoes/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(data)
@@ -226,8 +233,8 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
 
             if (response.ok) {
                 Alert.alert("Sucesso", "Marcação criada com sucesso!");
-                setModalVisible(false); // Fecha o modal
-                initMapInWebView(); // Atualiza o mapa para mostrar o novo ponto
+                setModalVisible(false);
+                initMapInWebView();
             } else {
                 throw new Error(responseData.error || "Não foi possível criar a marcação");
             }
@@ -236,15 +243,21 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         }
     };
 
-    // --- Lógica de Renderização ---
+    // --- Renderização ---
     if (!initialHtml) {
-        return <View style={styles.center}><ActivityIndicator size="large" /><Text>A preparar mapa...</Text></View>;
+        return (
+            <View style={styles.center}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingTextInitial}>Carregando mapa...</Text>
+            </View>
+        );
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
+            {/* Configuração da Barra de Status Transparente */}
+            <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
-            {/* Renderiza o componente do Modal quando houver coordenadas */}
             {newMarkerCoords && (
                 <AddMarkerModal
                     visible={modalVisible}
@@ -266,85 +279,167 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                         if (data.type === 'marker_added') {
                             onMapMarkerAdded(data.payload);
                         } else {
-                            // Log para outras mensagens vindas do WebView
                             console.log(`[WebView ${data.type.toUpperCase()}]:`, ...data.payload);
                         }
                     } catch (e) {
-                        // Log para mensagens que não são JSON
                         console.log('[WebView Raw]:', event.nativeEvent.data);
                     }
                 }}
             />
 
-            {status.loading && (<View style={styles.loadingOverlay}><ActivityIndicator size="large" color="#FFF" /></View>)}
-            {status.error && (<View style={styles.errorOverlay}><Text style={styles.errorText}>{status.error}</Text></View>)}
+            {/* Overlay de Carregamento Estilizado (Pílula Flutuante) */}
+            {status.loading && (
+                <View style={styles.loadingPill}>
+                    <ActivityIndicator size="small" color={COLORS.primaryDark} />
+                    <Text style={styles.loadingPillText}>Atualizando...</Text>
+                </View>
+            )}
 
-            <TouchableOpacity style={[styles.actionButton, { bottom: 20, backgroundColor: isAddingMarker ? '#c0392b' : '#2980b9' }]} onPress={() => setIsAddingMarker(!isAddingMarker)}>
-                <MaterialCommunityIcons name={isAddingMarker ? "close" : "plus"} size={24} color="white" />
+            {/* Overlay de Erro Estilizado */}
+            {status.error && (
+                <View style={styles.errorCard}>
+                    <MaterialCommunityIcons name="alert-circle" size={24} color={COLORS.white} />
+                    <Text style={styles.errorText}>{status.error}</Text>
+                    <TouchableOpacity onPress={updateMapData} style={styles.retryButton}>
+                        <Text style={styles.retryText}>Tentar Novamente</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Botão de Ação Flutuante (FAB) */}
+            <TouchableOpacity
+                style={[
+                    styles.actionButton,
+                    { backgroundColor: isAddingMarker ? COLORS.danger : COLORS.primary }
+                ]}
+                onPress={() => setIsAddingMarker(!isAddingMarker)}
+                activeOpacity={0.8}
+            >
+                <MaterialCommunityIcons
+                    name={isAddingMarker ? "close" : "plus"}
+                    size={30}
+                    color="white"
+                />
             </TouchableOpacity>
-        </SafeAreaView>
+
+            {/* Aviso quando modo de adicionar está ativo */}
+            {isAddingMarker && (
+                <View style={styles.instructionPill}>
+                    <Text style={styles.instructionText}>Toque no mapa para adicionar</Text>
+                </View>
+            )}
+        </View>
     );
 };
 
-
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    webview: { flex: 1, backgroundColor: '#333' },
-    loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    errorOverlay: { position: 'absolute', top: 50, left: 10, right: 10, padding: 10, backgroundColor: 'rgba(255, 0, 0, 0.8)', borderRadius: 5 },
-    errorText: { color: 'white', textAlign: 'center' },
-    controls: { backgroundColor: 'rgba(255, 255, 255, 0.9)', padding: 10, borderTopWidth: 1, borderColor: '#ccc' },
-    controlItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
-    themeButton: { position: 'absolute', top: 60, right: 20, backgroundColor: 'rgba(0, 0, 0, 0.5)', borderRadius: 20, padding: 8, zIndex: 10 },
-    actionButton: { position: 'absolute', right: 20, borderRadius: 30, padding: 12, zIndex: 10, elevation: 5 },
-    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalView: { width: '80%', backgroundColor: 'white', borderRadius: 20, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
-    modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
-    input: { width: '100%', height: 40, borderColor: 'gray', borderWidth: 1, borderRadius: 5, marginBottom: 10, paddingHorizontal: 10 },
-    buttonRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 20 },
-    imagePicker: {
-        width: '100%',
-        padding: 10,
-        borderWidth: 1,
-        borderColor: '#ccc',
-        borderRadius: 5,
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    previewImage: {
-        width: 100,
-        height: 100,
-        borderRadius: 5,
-        marginBottom: 15,
-    },
-});
-
-const pickerSelectStyles = StyleSheet.create({
     container: {
-        width: '100%',
+        flex: 1,
+        backgroundColor: COLORS.white
+    },
+    center: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: COLORS.white
+    },
+    webview: {
+        flex: 1,
+        backgroundColor: COLORS.white
+    },
+    loadingTextInitial: {
+        marginTop: 10,
+        color: COLORS.primaryDark,
+        fontSize: 16,
+        fontWeight: '600'
+    },
+    // Estilo novo do Loading (Pílula no topo)
+    loadingPill: {
+        position: 'absolute',
+        top: 60, // Abaixo da Status Bar
+        alignSelf: 'center',
+        backgroundColor: COLORS.overlay,
+        borderRadius: 30,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        elevation: 4,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 3.84,
+        zIndex: 10,
+    },
+    loadingPillText: {
+        color: COLORS.primaryDark,
+        marginLeft: 8,
+        fontWeight: 'bold',
+        fontSize: 14
+    },
+    // Estilo do Botão Flutuante (FAB)
+    actionButton: {
+        position: 'absolute',
+        bottom: 40,
+        right: 25,
+        width: 65,
+        height: 65,
+        borderRadius: 32.5,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
+        zIndex: 20,
+    },
+    // Estilo do Card de Erro
+    errorCard: {
+        position: 'absolute',
+        top: 110,
+        left: 20,
+        right: 20,
+        backgroundColor: COLORS.danger,
+        borderRadius: 15,
+        padding: 15,
+        alignItems: 'center',
+        elevation: 5,
+        zIndex: 15,
+    },
+    errorText: {
+        color: 'white',
+        textAlign: 'center',
+        marginTop: 5,
         marginBottom: 10,
+        fontSize: 14
     },
-    inputIOS: {
-        fontSize: 16,
-        paddingVertical: 12,
-        paddingHorizontal: 10,
-        borderWidth: 1,
-        borderColor: 'gray',
-        borderRadius: 5,
-        color: 'black',
-        paddingRight: 30, // para garantir que o texto não fique debaixo da seta
-    },
-    inputAndroid: {
-        fontSize: 16,
-        paddingHorizontal: 10,
+    retryButton: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 15,
         paddingVertical: 8,
-        borderWidth: 1,
-        borderColor: 'gray',
-        borderRadius: 5,
-        color: 'black',
-        paddingRight: 30, // para garantir que o tex§§§to não fique debaixo da seta
+        borderRadius: 20,
     },
+    retryText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 12
+    },
+    // Instrução flutuante quando está adicionando
+    instructionPill: {
+        position: 'absolute',
+        bottom: 120,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 20,
+    },
+    instructionText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14
+    }
 });
 
 export default MapScreen;

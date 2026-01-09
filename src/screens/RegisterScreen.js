@@ -1,91 +1,158 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../config/api';
 
-//const API_BASE_URL = 'http://192.168.192.166:3001/api/users';
+const COLORS = {
+    primary: '#81C784',
+    primaryDark: '#2E7D32',
+    background: '#FFFFFF',
+    inputBg: '#F5F5F5',
+    text: '#333',
+    placeholder: '#999'
+};
 
 export default function RegisterScreen({ navigation }) {
     const [nome, setNome] = useState('');
     const [email, setEmail] = useState('');
     const [senha, setSenha] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     const handleRegister = async () => {
         if (!nome || !email || !senha) {
-            Alert.alert('Erro', 'Por favor, preencha todos os campos.');
+            Alert.alert('Atenção', 'Preencha todos os campos.');
             return;
         }
 
+        setLoading(true);
         try {
-            const targetUrl = `${API_BASE_URL}/register`;
-            console.log("Tentando conectar a:", targetUrl); // Para ver no console do Metro
-            Alert.alert("Conectando a", targetUrl); // Para ver no app
-            const response = await fetch(`${API_BASE_URL}/register`, { // Usando a constante
+            const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nome, email, senha }),
             });
 
             const data = await response.json();
+            setLoading(false);
 
-            if (response.ok) { // Status 200-299
-                Alert.alert('Cadastro realizado!', data.message || `Bem-vindo, ${nome}!`);
-                navigation.goBack(); // volta para o login
+            if (response.ok) {
+                Alert.alert('Sucesso', 'Cadastro realizado!', [
+                    { text: 'OK', onPress: () => navigation.goBack() }
+                ]);
             } else {
-                Alert.alert('Erro no Cadastro', data.error || 'Não foi possível realizar o cadastro.');
+                Alert.alert('Erro', data.error || 'Falha no cadastro.');
             }
         } catch (error) {
-            console.error('Erro ao conectar com o servidor:', error);
-            Alert.alert('Erro de Conexão', 'Não foi possível conectar ao servidor. Tente novamente mais tarde.');
+            setLoading(false);
+            Alert.alert('Erro', 'Não foi possível conectar ao servidor.');
         }
     };
 
-    // FRONT
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Cadastro</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="Nome"
-                value={nome}
-                onChangeText={setNome}
-            />
-            <TextInput
-                style={styles.input}
-                placeholder="E-mail"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-            />
-            <TextInput
-                style={styles.input}
-                placeholder="Senha"
-                value={senha}
-                onChangeText={setSenha}
-                secureTextEntry
-            />
-            <TouchableOpacity style={styles.button} onPress={handleRegister}>
-                <Text style={styles.buttonText}>Cadastrar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-                <Text style={styles.link}>Voltar para login</Text>
-            </TouchableOpacity>
-        </View>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.container}
+        >
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                    <MaterialCommunityIcons name="arrow-left" size={28} color={COLORS.primaryDark} />
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.content}>
+                <Text style={styles.title}>Criar Conta</Text>
+                <Text style={styles.subtitle}>Junte-se a nós para preservar a ilha</Text>
+
+                <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons name="account-outline" size={20} color={COLORS.primaryDark} style={styles.icon} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Nome Completo"
+                        placeholderTextColor={COLORS.placeholder}
+                        value={nome}
+                        onChangeText={setNome}
+                    />
+                </View>
+
+                <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.primaryDark} style={styles.icon} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="E-mail"
+                        placeholderTextColor={COLORS.placeholder}
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                    />
+                </View>
+
+                <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons name="lock-outline" size={20} color={COLORS.primaryDark} style={styles.icon} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Senha"
+                        placeholderTextColor={COLORS.placeholder}
+                        value={senha}
+                        onChangeText={setSenha}
+                        secureTextEntry={!showPassword}
+                    />
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                        <MaterialCommunityIcons
+                            name={showPassword ? "eye" : "eye-off"}
+                            size={22}
+                            color={COLORS.placeholder}
+                        />
+                    </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
+                    {loading ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <Text style={styles.buttonText}>Cadastrar</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+        </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: 'center', padding: 20 },
-    title: { fontSize: 32, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-    input: {
-        height: 50, borderWidth: 1, borderColor: '#ccc',
-        borderRadius: 8, paddingHorizontal: 10, marginBottom: 15
+    container: { flex: 1, backgroundColor: COLORS.background },
+    header: { padding: 20, paddingTop: 50 },
+    backButton: { width: 40, height: 40, justifyContent: 'center' },
+    content: { flex: 1, justifyContent: 'center', paddingHorizontal: 30, paddingBottom: 100 }, // Padding bottom evita teclado cobrindo
+    title: { fontSize: 28, fontWeight: 'bold', color: COLORS.primaryDark, marginBottom: 5 },
+    subtitle: { fontSize: 16, color: COLORS.placeholder, marginBottom: 30 },
+
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.inputBg,
+        borderRadius: 12,
+        paddingHorizontal: 15,
+        marginBottom: 15,
+        height: 55,
+        borderWidth: 1,
+        borderColor: '#EEE',
     },
+    icon: { marginRight: 10 },
+    input: { flex: 1, color: COLORS.text, fontSize: 16 },
+
     button: {
-        backgroundColor: '#007AFF', padding: 15, borderRadius: 8, alignItems: 'center'
+        backgroundColor: COLORS.primary,
+        height: 55,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 20,
+        elevation: 2,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
-    buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-    link: { color: '#007AFF', marginTop: 20, textAlign: 'center' },
+    buttonText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
 });

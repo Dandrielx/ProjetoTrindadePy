@@ -1,6 +1,6 @@
 // src/navigation/DrawerContent.js
 import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, StyleSheet, SafeAreaView, TouchableOpacity, Button, ScrollView } from 'react-native';
+import { View, Text, Switch, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -10,20 +10,23 @@ const POLLUTANT_TYPES = [
     { label: 'Óleo', value: 'oil' },
 ];
 
+const THEME_COLOR = '#81C784'; // Verde Pastel
+const TEXT_COLOR = '#2E3A33';
+const BG_COLOR = '#FFFFFF';
+
 export function DrawerContent({ navigation, ...props }) {
     const {
         showHeatmap, setShowHeatmap,
         showMarkers, setShowMarkers,
         mapTheme, setMapTheme,
-        filters, setFilters // Recebe os filtros ATUAIS e a função para ATUALIZÁ-LOS
+        filters, setFilters
     } = props;
 
-    // 1. CRIA UM ESTADO "RASCUNHO" LOCAL PARA OS FILTROS
+    // --- LÓGICA (MANTIDA) ---
     const [draftFilters, setDraftFilters] = useState(filters);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [datePickerTarget, setDatePickerTarget] = useState('startDate');
 
-    // Sincroniza o rascunho se os filtros principais mudarem
     useEffect(() => {
         setDraftFilters(filters);
     }, [filters]);
@@ -36,13 +39,11 @@ export function DrawerContent({ navigation, ...props }) {
         setShowDatePicker(false);
         if (selectedDate) {
             const dateString = selectedDate.toISOString().split('T')[0];
-            // Modifica o estado rascunho
             setDraftFilters(prev => ({ ...prev, [datePickerTarget]: dateString }));
         }
     };
 
     const handleTypeToggle = (typeValue) => {
-        // Modifica o estado rascunho
         setDraftFilters(prev => {
             const newTypes = new Set(prev.types);
             if (newTypes.has(typeValue)) {
@@ -62,45 +63,116 @@ export function DrawerContent({ navigation, ...props }) {
         setDraftFilters(prev => ({ ...prev, types: [] }));
     };
 
-    // 2. FUNÇÃO DO BOTÃO "APLICAR"
     const applyFilters = () => {
-        setFilters(draftFilters); // Atualiza o estado principal no MapDrawerNavigator
-        navigation.closeDrawer(); // Fecha o menu para ver o resultado
+        setFilters(draftFilters);
+        navigation.closeDrawer();
     };
 
+    // Componente Auxiliar de Botão para manter estilo consistente
+    const CustomButton = ({ title, onPress, variant = 'primary' }) => (
+        <TouchableOpacity
+            style={[styles.btn, variant === 'outline' ? styles.btnOutline : styles.btnPrimary]}
+            onPress={onPress}
+        >
+            <Text style={[styles.btnText, variant === 'outline' ? styles.btnTextOutline : styles.btnTextPrimary]}>
+                {title}
+            </Text>
+        </TouchableOpacity>
+    );
+
     return (
-        // Usamos um SafeAreaView + ScrollView para garantir que o botão não sobreponha o conteúdo
-        <SafeAreaView style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={styles.scrollContainer}>
-                <Text style={styles.title}>Visualização</Text>
-                <View style={styles.separator} />
-                <View style={styles.controlItem}>
-                    <Text style={styles.label}>Mapa de Calor</Text>
-                    <Switch value={showHeatmap} onValueChange={setShowHeatmap} />
-                </View>
-                <View style={styles.controlItem}>
-                    <Text style={styles.label}>Pontos Individuais</Text>
-                    <Switch value={showMarkers} onValueChange={setShowMarkers} />
-                </View>
-                <View style={styles.controlItem}>
-                    <Text style={styles.label}>Tema Escuro</Text>
-                    <Switch value={mapTheme === 'dark'} onValueChange={toggleTheme} />
+        <View style={styles.container}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+
+                {/* CABEÇALHO MODERNO */}
+                <View style={styles.header}>
+                    <View style={styles.avatarContainer}>
+                        <Text style={styles.avatarText}>US</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.userName}>Usuário</Text>
+                        <Text style={styles.userEmail}>usuario@email.com</Text>
+                    </View>
                 </View>
 
-                <View style={styles.separator} />
-                <Text style={styles.title}>Filtros</Text>
+                {/* SEÇÃO VISUALIZAÇÃO */}
+                <Text style={styles.sectionTitle}>Visualização</Text>
 
-                <Text style={styles.label}>Período:</Text>
-                <View style={styles.dateRow}>
-                    <Button title={draftFilters.startDate || "Data Início"} onPress={() => { setDatePickerTarget('startDate'); setShowDatePicker(true); }} />
-                    <Text>até</Text>
-                    <Button title={draftFilters.endDate || "Data Fim"} onPress={() => { setDatePickerTarget('endDate'); setShowDatePicker(true); }} />
+                <View style={styles.card}>
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Mapa de Calor</Text>
+                        <Switch
+                            trackColor={{ false: "#e0e0e0", true: "#A5D6A7" }}
+                            thumbColor={showHeatmap ? THEME_COLOR : "#f4f3f4"}
+                            value={showHeatmap}
+                            onValueChange={setShowHeatmap}
+                        />
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Pontos Individuais</Text>
+                        <Switch
+                            trackColor={{ false: "#e0e0e0", true: "#A5D6A7" }}
+                            thumbColor={showMarkers ? THEME_COLOR : "#f4f3f4"}
+                            value={showMarkers}
+                            onValueChange={setShowMarkers}
+                        />
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Tema Escuro</Text>
+                        <Switch
+                            trackColor={{ false: "#e0e0e0", true: "#A5D6A7" }}
+                            thumbColor={mapTheme === 'dark' ? THEME_COLOR : "#f4f3f4"}
+                            value={mapTheme === 'dark'}
+                            onValueChange={toggleTheme}
+                        />
+                    </View>
                 </View>
-                {(draftFilters.startDate || draftFilters.endDate) && (
-                    <TouchableOpacity onPress={clearDateFilters}>
-                        <Text style={styles.clearButton}>Limpar Datas</Text>
-                    </TouchableOpacity>
-                )}
+
+                {/* SEÇÃO FILTROS */}
+                <Text style={styles.sectionTitle}>Filtros</Text>
+
+                <View style={styles.card}>
+                    <Text style={styles.subLabel}>Período</Text>
+                    <View style={styles.dateButtonsRow}>
+                        <CustomButton
+                            title={draftFilters.startDate || "Início"}
+                            variant="outline"
+                            onPress={() => { setDatePickerTarget('startDate'); setShowDatePicker(true); }}
+                        />
+                        <Text style={styles.dateTo}>até</Text>
+                        <CustomButton
+                            title={draftFilters.endDate || "Fim"}
+                            variant="outline"
+                            onPress={() => { setDatePickerTarget('endDate'); setShowDatePicker(true); }}
+                        />
+                    </View>
+                    {(draftFilters.startDate || draftFilters.endDate) && (
+                        <TouchableOpacity onPress={clearDateFilters} style={styles.clearLink}>
+                            <Text style={styles.clearLinkText}>Limpar Datas</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    <View style={styles.divider} />
+
+                    <Text style={[styles.subLabel, { marginTop: 10 }]}>Poluentes</Text>
+                    {POLLUTANT_TYPES.map(type => (
+                        <TouchableOpacity key={type.value} style={styles.checkboxRow} onPress={() => handleTypeToggle(type.value)}>
+                            <MaterialCommunityIcons
+                                name={draftFilters.types.includes(type.value) ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+                                size={24}
+                                color={draftFilters.types.includes(type.value) ? THEME_COLOR : '#ccc'}
+                            />
+                            <Text style={styles.checkboxLabel}>{type.label}</Text>
+                        </TouchableOpacity>
+                    ))}
+                    {draftFilters.types.length > 0 && (
+                        <TouchableOpacity onPress={clearTypeFilters} style={styles.clearLink}>
+                            <Text style={styles.clearLinkText}>Limpar Tipos</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
 
                 {showDatePicker && (
                     <DateTimePicker
@@ -110,43 +182,184 @@ export function DrawerContent({ navigation, ...props }) {
                         onChange={handleDateChange}
                     />
                 )}
-
-                <Text style={styles.label}>Tipo de Poluente:</Text>
-                {POLLUTANT_TYPES.map(type => (
-                    <TouchableOpacity key={type.value} style={styles.checkboxRow} onPress={() => handleTypeToggle(type.value)}>
-                        <MaterialCommunityIcons name={draftFilters.types.includes(type.value) ? 'checkbox-marked' : 'checkbox-blank-outline'} size={24} color="#333" />
-                        <Text style={styles.checkboxLabel}>{type.label}</Text>
-                    </TouchableOpacity>
-                ))}
-                {draftFilters.types.length > 0 && (
-                    <TouchableOpacity onPress={clearTypeFilters}>
-                        <Text style={styles.clearButton}>Limpar Tipos</Text>
-                    </TouchableOpacity>
-                )}
             </ScrollView>
 
-            {/* 3. BOTÃO "APLICAR" NO FINAL DO DRAWER */}
-            <View style={styles.applyButtonContainer}>
-                <Button title="Aplicar Filtros" onPress={applyFilters} />
+            <View style={styles.footer}>
+                <TouchableOpacity style={styles.applyButton} onPress={applyFilters}>
+                    <Text style={styles.applyButtonText}>Aplicar Filtros</Text>
+                </TouchableOpacity>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    scrollContainer: { padding: 20 },
-    title: { fontSize: 22, fontWeight: 'bold', marginBottom: 10, color: '#333' },
-    separator: { height: 1, backgroundColor: '#ccc', marginVertical: 15 },
-    controlItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
-    label: { fontSize: 16, color: '#333' },
-    dateRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginVertical: 10 },
-    clearButton: { color: '#e74c3c', textAlign: 'center', marginTop: 5, marginBottom: 15, fontSize: 14 },
-    checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-    checkboxLabel: { marginLeft: 10, fontSize: 16, color: '#333' },
-    applyButtonContainer: {
+    container: {
+        flex: 1,
+        backgroundColor: '#F7F9F8', // Fundo off-white levemente esverdeado/cinza
+        paddingTop: 40,
+    },
+    scrollContent: {
         padding: 20,
+        paddingBottom: 40,
+    },
+    // Header
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 30,
+        paddingBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    avatarContainer: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: THEME_COLOR,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3.84,
+        elevation: 3,
+    },
+    avatarText: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 16
+    },
+    userName: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: TEXT_COLOR,
+    },
+    userEmail: {
+        fontSize: 14,
+        color: '#757575',
+    },
+    // Sections
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#757575',
+        textTransform: 'uppercase',
+        letterSpacing: 1.2,
+        marginBottom: 10,
+        marginTop: 10,
+    },
+    card: {
+        backgroundColor: BG_COLOR,
+        borderRadius: 12,
+        padding: 15,
+        marginBottom: 20,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: '#F0F0F0',
+        marginVertical: 10,
+    },
+    label: {
+        fontSize: 16,
+        color: TEXT_COLOR,
+    },
+    subLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#757575',
+        marginBottom: 10,
+    },
+    // Buttons Helpers
+    btn: {
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 100,
+    },
+    btnPrimary: {
+        backgroundColor: THEME_COLOR,
+    },
+    btnOutline: {
+        borderWidth: 1,
+        borderColor: THEME_COLOR,
+        backgroundColor: 'transparent',
+    },
+    btnText: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    btnTextPrimary: {
+        color: '#FFF',
+    },
+    btnTextOutline: {
+        color: THEME_COLOR,
+    },
+    // Date & Filters
+    dateButtonsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    dateTo: {
+        color: '#999',
+        marginHorizontal: 10,
+    },
+    checkboxRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    checkboxLabel: {
+        marginLeft: 10,
+        fontSize: 16,
+        color: TEXT_COLOR,
+    },
+    clearLink: {
+        alignSelf: 'flex-end',
+        marginTop: 5,
+        marginBottom: 5,
+    },
+    clearLinkText: {
+        color: '#E57373', // Vermelho suave pastel
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    // Footer / Apply Button
+    footer: {
+        padding: 20,
+        backgroundColor: BG_COLOR,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
-        backgroundColor: '#f8f8f8'
+        borderTopColor: '#F0F0F0',
+    },
+    applyButton: {
+        backgroundColor: THEME_COLOR,
+        paddingVertical: 15,
+        borderRadius: 10,
+        alignItems: 'center',
+        shadowColor: THEME_COLOR,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 4,
+    },
+    applyButtonText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: 'bold',
     }
 });
