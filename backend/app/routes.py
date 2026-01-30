@@ -16,6 +16,7 @@ def register():
     nome = data.get('nome')
     email = data.get('email')
     senha = data.get('senha')
+    cargo = data.get('cargo', 'cidadao')
 
     if not all([nome, email, senha]):
         return jsonify({"error": "Nome, email e senha são obrigatórios."}), 400
@@ -30,7 +31,8 @@ def register():
         novo_usuario = Usuario(
             nome=nome,
             email=email,
-            senha_hash=hash_password(senha) # Usa a função de hash de models.py
+            senha_hash=hash_password(senha), # Usa a função de hash de models.py
+            cargo=cargo
         )
         
         db.add(novo_usuario)
@@ -38,7 +40,7 @@ def register():
         
         return jsonify({
             "message": "Utilizador criado com sucesso!",
-            "user": {"nome": novo_usuario.nome, "email": novo_usuario.email}
+            "user": {"nome": novo_usuario.nome, "email": novo_usuario.email, "role": cargo}
         }), 201
     finally:
         db.close()
@@ -65,7 +67,9 @@ def login():
 
             token_payload = {
                 'user_id': user.id, 
+                "id": user.id,
                 'email': user.email,
+                'cargo': user.cargo,
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
             }
             token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
@@ -73,7 +77,7 @@ def login():
             return jsonify({
                 "message": "Login bem-sucedido!",
                 "token": token,
-                "user": {"nome": user.nome, "email": user.email}
+                "user": {"nome": user.nome, "id": user.id, "email": user.email, "cargo": user.cargo}
             }), 200
         
         return jsonify({"error": "Email ou senha inválidos."}), 401
@@ -87,5 +91,9 @@ def validate_token(current_user):
     # Retornamos os dados do usuário para o app poder usá-los se quiser.
     return jsonify({
         "message": "Token é válido.",
-        "user": {"nome": current_user.nome, "email": current_user.email}
+        "user": {
+            "nome": current_user.nome,
+            "id": current_user.id,
+            "email": current_user.email, 
+            "cargo": current_user.cargo}
     }), 200

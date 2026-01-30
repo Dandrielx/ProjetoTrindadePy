@@ -17,6 +17,8 @@ const TOKEN_KEY = 'user_jwt_token'; // Mesma chave usada no LoginScreen
 
 export default function AppNavigator() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [userRole, setUserRole] = useState('cidadao');
+    const [userId, setUserId] = useState(null);
     const [isLoading, setIsLoading] = useState(true); // Estado para o loading inicial
 
     useEffect(() => {
@@ -24,7 +26,7 @@ export default function AppNavigator() {
             try {
                 const token = await SecureStore.getItemAsync(TOKEN_KEY);
                 if (token) {
-                    const response = await fetch(`${API_BASE_URL}/validate-token`, {
+                    const response = await fetch(`${API_BASE_URL}/api/auth/validate-token`, {
                         method: 'GET',
                         headers: {
                             'Authorization': `Bearer ${token}`
@@ -33,7 +35,10 @@ export default function AppNavigator() {
 
                     if (response.ok) {
                         // Se a resposta for OK, o token é válido.
+                        const data = await response.json();
                         setIsLoggedIn(true);
+                        setUserRole(data.user.cargo || 'cidadao');
+                        setUserId(data.user.id);
                     } else {
                         // Se não, o token é inválido/expirado, removemos ele.
                         await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -63,9 +68,11 @@ export default function AppNavigator() {
             {isLoggedIn ? (
                 <Stack.Navigator screenOptions={{ headerShown: true }}>
                     <Stack.Screen name="Home">
-                        {(props) => <HomeScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
+                        {(props) => <HomeScreen {...props} userRole={userRole} setIsLoggedIn={setIsLoggedIn} />}
                     </Stack.Screen>
-                    <Stack.Screen name="Map" component={MapDrawerNavigator} options={{ headerShown: false }} />
+                    <Stack.Screen name="Map" options={{ headerShown: false }}>
+                        {(props) => <MapDrawerNavigator {...props} userRole={userRole} userId={userId} />}
+                    </Stack.Screen>
                     <Stack.Screen
                         name="Statistics"
                         component={StatisticsScreen}
@@ -75,7 +82,12 @@ export default function AppNavigator() {
             ) : (
                 <Stack.Navigator screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="Login">
-                        {(props) => <LoginScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
+                        {(props) => <LoginScreen
+                            {...props}
+                            setIsLoggedIn={setIsLoggedIn}
+                            setUserRole={setUserRole}
+                            setUserId={setUserId}
+                        />}
                     </Stack.Screen>
                     <Stack.Screen name="Register" component={RegisterScreen} />
                 </Stack.Navigator>

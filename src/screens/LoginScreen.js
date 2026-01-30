@@ -16,7 +16,7 @@ const COLORS = {
     placeholder: '#999'
 };
 
-export default function LoginScreen({ navigation, setIsLoggedIn }) {
+export default function LoginScreen({ navigation, setIsLoggedIn, setUserRole, setUserId }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -40,6 +40,9 @@ export default function LoginScreen({ navigation, setIsLoggedIn }) {
 
             if (response.ok) {
                 await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+
+                setUserId(data.user.id);
+                setUserRole(data.user.cargo);
                 setIsLoggedIn(true);
             } else {
                 Alert.alert('Erro', data.error || 'Dados inválidos.');

@@ -16,7 +16,7 @@ const COLORS = {
     stats: '#4DB6AC' // Cor secundária para o novo botão
 };
 
-export default function HomeScreen({ navigation, setIsLoggedIn }) {
+export default function HomeScreen({ navigation, setIsLoggedIn, userRole }) {
     const handleLogout = async () => {
         try {
             await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -31,8 +31,14 @@ export default function HomeScreen({ navigation, setIsLoggedIn }) {
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
             <View style={styles.header}>
-                <Text style={styles.greeting}>Olá, Pesquisador!</Text>
-                <Text style={styles.subtitle}>O que vamos monitorar hoje?</Text>
+                <Text style={styles.greeting}>
+                    Olá, {userRole === 'pesquisador' ? 'Pesquisador' : 'Colaborador'}!
+                </Text>
+                <Text style={styles.subtitle}>
+                    {userRole === 'pesquisador'
+                        ? 'Pronto para alimentar a base científica?'
+                        : 'Ajude-nos a monitorizar o ambiente.'}
+                </Text>
             </View>
 
             <View style={styles.content}>

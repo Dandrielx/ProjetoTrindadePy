@@ -15,7 +15,8 @@ class Usuario(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     senha_hash = Column(String, nullable=False)
     
-    # NOVAS COLUNAS
+    cargo = Column(String, default='cidadao', nullable=False) # 'cidadao' ou 'pesquisador'
+    
     pontuacao = Column(Integer, default=0)
     is_admin = Column(Boolean, default=False)
 
@@ -33,12 +34,25 @@ class Marcacao(Base):
     descricao = Column(String, nullable=True)
     data_criacao = Column(DateTime(timezone=True), server_default=func.now())
     
-    # NOVAS COLUNAS
+    projeto = Column(String, default='comunitario', nullable=False) # 'comunitario', 'quimica_ma', 'trindade'
+    
     agua = Column(Boolean, default=False, nullable=False)
     tipo_local = Column(String, nullable=False) # 'unico' para lixo único ou 'sujo' para local sujo
     
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     autor = relationship("Usuario", back_populates="marcacoes")
+    
+    detalhes = relationship("MarcacaoDetalhe", back_populates="marcacao", cascade="all, delete-orphan")
+
+class MarcacaoDetalhe(Base):
+    __tablename__ = "marcacoes_detalhes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    marcacao_id = Column(Integer, ForeignKey("marcacoes.id"), nullable=False)
+    chave = Column(String, nullable=False) # Ex: 'pH', 'salinidade'
+    valor = Column(String, nullable=False) # Guardado como string para flexibilidade
+
+    marcacao = relationship("Marcacao", back_populates="detalhes")
 
 def hash_password(password):
     return bcrypt.generate_password_hash(password).decode('utf-8')

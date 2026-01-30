@@ -6,7 +6,7 @@ import { DrawerContent } from './DrawerContent';
 
 const Drawer = createDrawerNavigator();
 
-export default function MapDrawerNavigator() {
+export default function MapDrawerNavigator({ userRole, userId }) {
     const [showHeatmap, setShowHeatmap] = useState(true);
     const [showMarkers, setShowMarkers] = useState(false);
     const [mapTheme, setMapTheme] = useState('light');
@@ -48,8 +48,11 @@ export default function MapDrawerNavigator() {
                         showMarkers={showMarkers}
                         mapTheme={mapTheme}
                         filters={filters} // Passa o estado atual dos filtros
+                        userRole={userRole}
+                        userId={userId}
                     />
                 }
+
             </Drawer.Screen>
         </Drawer.Navigator>
     );

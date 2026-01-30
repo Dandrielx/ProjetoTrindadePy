@@ -28,6 +28,7 @@ export default {
         android: {
             // Se você tinha um "package" no seu app.json original, adicione-o aqui também.
             // Ex: package: "com.dandrielx.projetotrindade",
+            package: "com.dionyseicholz.projeto_trindade_v1",
             permissions: [
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_FINE_LOCATION"
@@ -44,6 +45,11 @@ export default {
             adaptiveIcon: {
                 foregroundImage: "./assets/adaptive-icon.png", // Mantido do seu app.json original
                 backgroundColor: "#ffffff" // Mantido do seu app.json original
+            }
+        },
+        extra: {
+            eas: {
+                projectId: "8a58a629-9474-4f6e-bff1-600dec46b7da"
             }
         },
         web: {

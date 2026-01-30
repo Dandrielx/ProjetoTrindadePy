@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 import { API_BASE_URL } from '../config/api';
 
 const COLORS = {
@@ -17,6 +18,7 @@ export default function RegisterScreen({ navigation }) {
     const [email, setEmail] = useState('');
     const [senha, setSenha] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [cargo, setCargo] = useState('cidadao');
     const [loading, setLoading] = useState(false);
 
     const handleRegister = async () => {
@@ -30,7 +32,7 @@ export default function RegisterScreen({ navigation }) {
             const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nome, email, senha }),
+                body: JSON.stringify({ nome, email, senha, cargo }),
             });
 
             const data = await response.json();
@@ -62,7 +64,7 @@ export default function RegisterScreen({ navigation }) {
 
             <View style={styles.content}>
                 <Text style={styles.title}>Criar Conta</Text>
-                <Text style={styles.subtitle}>Junte-se a nós para preservar a ilha</Text>
+                <Text style={styles.subtitle}>Junte-se a nós</Text>
 
                 <View style={styles.inputContainer}>
                     <MaterialCommunityIcons name="account-outline" size={20} color={COLORS.primaryDark} style={styles.icon} />
@@ -107,6 +109,18 @@ export default function RegisterScreen({ navigation }) {
                     </TouchableOpacity>
                 </View>
 
+                <Text style={styles.subtitle}>Tipo de Perfil:</Text>
+                <View style={styles.pickerContainer}>
+                    <Picker
+                        selectedValue={cargo}
+                        onValueChange={(itemValue) => setCargo(itemValue)}
+                        style={styles.picker}
+                    >
+                        <Picker.Item label="Cidadão (Colaborador)" value="cidadao" />
+                        <Picker.Item label="Pesquisador (Técnico)" value="pesquisador" />
+                    </Picker>
+                </View>
+
                 <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
                     {loading ? (
                         <ActivityIndicator color="#FFF" />
@@ -126,6 +140,8 @@ const styles = StyleSheet.create({
     content: { flex: 1, justifyContent: 'center', paddingHorizontal: 30, paddingBottom: 100 }, // Padding bottom evita teclado cobrindo
     title: { fontSize: 28, fontWeight: 'bold', color: COLORS.primaryDark, marginBottom: 5 },
     subtitle: { fontSize: 16, color: COLORS.placeholder, marginBottom: 30 },
+    pickerContainer: { backgroundColor: COLORS.inputBg, borderRadius: 12, marginBottom: 20, overflow: 'hidden' },
+    picker: { height: 55, width: '100%' },
 
     inputContainer: {
         flexDirection: 'row',

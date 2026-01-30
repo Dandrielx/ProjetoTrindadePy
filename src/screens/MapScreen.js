@@ -3,48 +3,44 @@ import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert, Sta
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system/legacy'; // Mantido import legacy para compatibilidade
+import * as FileSystem from 'expo-file-system/legacy';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config/api';
 
-// Importe o novo componente Modal
 import AddMarkerModal from '../components/AddMarkerModal';
 
-// Carrega o ficheiro HTML
 const mapHtmlAsset = Asset.fromModule(require('./map.html'));
 
-// Paleta de Cores Moderna
 const COLORS = {
-    primary: '#81C784',      // Verde Pastel
-    primaryDark: '#388E3C',  // Verde Escuro para contraste
+    primary: '#81C784',
+    primaryDark: '#388E3C',
     accent: '#4DB6AC',
-    danger: '#e57373',       // Vermelho suave
+    danger: '#e57373',
     white: '#FFFFFF',
     overlay: 'rgba(255, 255, 255, 0.95)',
     shadow: '#000'
 };
 
-const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
+const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, userId }) => {
     const [status, setStatus] = useState({ loading: true, error: null });
     const [initialHtml, setInitialHtml] = useState(null);
     const webviewRef = useRef(null);
     const [isAddingMarker, setIsAddingMarker] = useState(false);
 
-    // Estados para controlar o Modal
     const [modalVisible, setModalVisible] = useState(false);
     const [newMarkerCoords, setNewMarkerCoords] = useState(null);
 
-    // URL Base para facilitar manutenção (mesmo IP do seu arquivo original)
+    // ESTADOS PARA EDIÇÃO
+    const [editMode, setEditMode] = useState(false);
+    const [markerToEdit, setMarkerToEdit] = useState(null);
+
     const API_URL = `${API_BASE_URL}/api`;
 
-    // Efeito para carregar o template HTML inicial
     useEffect(() => {
         const loadHtmlTemplate = async () => {
             try {
-                if (!mapHtmlAsset.downloaded) {
-                    await mapHtmlAsset.downloadAsync();
-                }
+                if (!mapHtmlAsset.downloaded) await mapHtmlAsset.downloadAsync();
                 const htmlContent = await FileSystem.readAsStringAsync(mapHtmlAsset.localUri);
                 setInitialHtml(htmlContent);
             } catch (e) {
@@ -54,96 +50,38 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
         loadHtmlTemplate();
     }, []);
 
-    // Função para inicializar o mapa DENTRO do WebView
-    const initMapInWebView = async () => {
-        try {
-            setStatus({ loading: true, error: null });
-
-            let { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
-            if (permissionStatus !== 'granted') {
-                throw new Error('A permissão para aceder à localização foi negada.');
-            }
-
-            const currentLocation = await Location.getCurrentPositionAsync({});
-            if (!currentLocation) {
-                throw new Error('Não foi possível obter a localização atual.');
-            }
-
-            const params = new URLSearchParams();
-            if (filters.startDate) params.append('start_date', filters.startDate);
-            if (filters.endDate) params.append('end_date', filters.endDate);
-            if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
-
-            const queryString = params.toString();
-            const apiUrl = `${API_URL}/marcacoes?${queryString}`;
-
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                throw new Error('Falha ao buscar os dados de poluição do servidor.');
-            }
-            const pollutionData = await response.json();
-
-            const initialData = {
-                userCoords: currentLocation.coords,
-                pollutionPoints: pollutionData,
-                showHeatmap: showHeatmap,
-                showMarkers: showMarkers
-            };
-
-            webviewRef.current?.injectJavaScript(`
-                window.init(${JSON.stringify(initialData)});
-                true; 
-            `);
-
-            setStatus({ loading: false, error: null });
-        } catch (e) {
-            console.error("Erro na inicialização do mapa:", e);
-            setStatus({ loading: false, error: e.message });
-        }
-    };
-
-    // Função que inicializa ou atualiza o mapa com dados
     const updateMapData = async () => {
         if (!webviewRef.current) return;
-
         try {
             setStatus(prev => ({ ...prev, loading: true, error: null }));
-
             const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
-            if (permissionStatus !== 'granted') throw new Error('A permissão para aceder à localização foi negada.');
+            if (permissionStatus !== 'granted') throw new Error('Permissão negada.');
 
             const currentLocation = await Location.getCurrentPositionAsync({});
-            if (!currentLocation) throw new Error('Não foi possível obter a localização atual.');
-
             const params = new URLSearchParams();
             if (filters.startDate) params.append('start_date', filters.startDate);
             if (filters.endDate) params.append('end_date', filters.endDate);
             if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
 
-            const queryString = params.toString();
-            const apiUrl = `${API_URL}/marcacoes?${queryString}`;
-
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error('Falha ao buscar dados do servidor.');
+            const response = await fetch(`${API_URL}/marcacoes?${params.toString()}`);
+            if (!response.ok) throw new Error('Falha ao buscar dados.');
 
             const pollutionData = await response.json();
-
             const initialData = {
                 userCoords: currentLocation.coords,
                 pollutionPoints: pollutionData,
-                showHeatmap: showHeatmap,
-                showMarkers: showMarkers
+                showHeatmap,
+                showMarkers,
+                apiBaseUrl: API_BASE_URL
             };
 
             webviewRef.current.injectJavaScript(`window.init(${JSON.stringify(initialData)}); true;`);
             setStatus(prev => ({ ...prev, loading: false }));
         } catch (e) {
-            console.error("Erro ao atualizar o mapa:", e);
             setStatus({ loading: false, error: e.message });
         }
     };
 
-    // Efeitos para enviar comandos para o WebView
     useEffect(() => {
         webviewRef.current?.injectJavaScript(`toggleAddMarkerMode(${isAddingMarker}); true;`);
     }, [isAddingMarker]);
@@ -158,120 +96,92 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
     }, [showHeatmap, showMarkers, mapTheme]);
 
     useEffect(() => {
-        if (initialHtml) {
-            updateMapData();
-        }
+        if (initialHtml) updateMapData();
     }, [filters, initialHtml]);
 
-
-    // --- Funções para o fluxo de criação de marcador ---
-
     const onMapMarkerAdded = (coords) => {
-        // Normaliza as coordenadas para o formato esperado pelo backend e pelo Modal
-        const normalizedCoords = {
+        setNewMarkerCoords({
             latitude: coords.latitude || coords.lat,
             longitude: coords.longitude || coords.lng
-        };
-        console.log("Coordenadas Normalizadas para o Modal:", normalizedCoords); // Check no log do VSCode
-        setNewMarkerCoords(normalizedCoords);
+        });
+        setEditMode(false);
+        setMarkerToEdit(null);
         setModalVisible(true);
         setIsAddingMarker(false);
     };
 
-    const handleSaveMarker = async (marcacaoData, imageAsset) => {
+    const handleSaveMarker = async (marcacaoData, imageAsset, isEdit = false, markerId = null) => {
+        const url = isEdit ? `${API_URL}/marcacoes/${markerId}` : `${API_URL}/marcacoes/`;
+        const method = isEdit ? 'PUT' : 'POST';
+
         try {
             let finalData = { ...marcacaoData };
+            const token = await SecureStore.getItemAsync('user_jwt_token');
+
             if (imageAsset) {
-                Alert.alert("Aguarde", "A enviar imagem...");
-                const uploadedUrl = await uploadImage(imageAsset);
-                finalData.imagem_url = uploadedUrl;
+                const formData = new FormData();
+                formData.append('file', {
+                    uri: imageAsset.uri,
+                    name: `photo_${Date.now()}.jpg`,
+                    type: 'image/jpeg',
+                });
+
+                const uploadResponse = await fetch(`${API_URL}/upload/`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData,
+                });
+                const uploadData = await uploadResponse.json();
+                if (!uploadResponse.ok) throw new Error(uploadData.error || "Erro no upload");
+                finalData.imagem_url = uploadData.image_url;
             }
 
-            await sendMarkerToAPI(finalData);
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(finalData)
+            });
 
+            const resData = await response.json();
+            if (response.ok) {
+                Alert.alert("Sucesso", isEdit ? "Marcação atualizada!" : "Marcação criada!");
+                setModalVisible(false);
+                setEditMode(false);
+                setMarkerToEdit(null);
+                updateMapData();
+            } else {
+                throw new Error(resData.error || "Falha na operação");
+            }
         } catch (error) {
             Alert.alert("Erro", error.message);
         }
     };
 
-    const uploadImage = async (imageAsset) => {
-        const token = await SecureStore.getItemAsync('user_jwt_token');
-        const uploadUrl = `${API_URL}/upload/`;
-
-        const formData = new FormData();
-        formData.append('file', {
-            uri: imageAsset.uri,
-            name: `photo_${Date.now()}.jpg`,
-            type: 'image/jpeg',
-        });
-
-        const response = await fetch(uploadUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            },
-            body: formData,
-        });
-
-        const responseData = await response.json();
-        if (!response.ok) {
-            console.error("Erro no upload:", responseData);
-            throw new Error(responseData.error || "Falha no upload da imagem.");
-        }
-        return responseData.image_url;
-    };
-
-    const sendMarkerToAPI = async (data) => {
-        try {
-            const token = await SecureStore.getItemAsync('user_jwt_token');
-            if (!token) {
-                Alert.alert("Erro", "Você não está logado.");
-                return;
-            }
-
-            const response = await fetch(`${API_URL}/marcacoes/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(data)
-            });
-
-            const responseData = await response.json();
-
-            if (response.ok) {
-                Alert.alert("Sucesso", "Marcação criada com sucesso!");
-                setModalVisible(false);
-                initMapInWebView();
-            } else {
-                throw new Error(responseData.error || "Não foi possível criar a marcação");
-            }
-        } catch (error) {
-            Alert.alert("Erro de Rede", error.message);
-        }
-    };
-
-    // --- Renderização ---
     if (!initialHtml) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={styles.loadingTextInitial}>Carregando mapa...</Text>
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            {/* Configuração da Barra de Status Transparente */}
             <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
-            {newMarkerCoords && (
-                <AddMarkerModal
-                    visible={modalVisible}
-                    onClose={() => setModalVisible(false)}
-                    onSave={handleSaveMarker}
-                    initialCoords={newMarkerCoords}
-                />
-            )}
+            <AddMarkerModal
+                visible={modalVisible}
+                onClose={() => {
+                    setModalVisible(false);
+                    setEditMode(false);
+                    setMarkerToEdit(null);
+                }}
+                onSave={handleSaveMarker}
+                initialCoords={newMarkerCoords}
+                userRole={userRole}
+                editMode={editMode}
+                markerToEdit={markerToEdit}
+            />
 
             <WebView
                 ref={webviewRef}
@@ -282,18 +192,40 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                 onMessage={(event) => {
                     try {
                         const data = JSON.parse(event.nativeEvent.data);
+                        if (data.type === 'edit_marker_request') {
+                            const marker = data.payload;
+
+                            // REGRA: Se for comunitário, apenas o dono edita. 
+                            // Pesquisadores podem editar dados de pesquisa.
+                            const isOwner = marker.usuario_id === userId;
+
+                            if (marker.projeto === 'comunitario' && !isOwner) {
+                                Alert.alert("Acesso Negado", "Você só pode editar suas próprias marcações comunitárias.");
+                                return;
+                            }
+                            setMarkerToEdit(marker);
+                            setEditMode(true);
+                            setNewMarkerCoords({ latitude: marker.lat, longitude: marker.lng });
+                            setModalVisible(true);
+                        }
                         if (data.type === 'marker_added') {
                             onMapMarkerAdded(data.payload);
-                        } else {
-                            console.log(`[WebView ${data.type.toUpperCase()}]:`, ...data.payload);
+                        } else if (data.type === 'edit_marker_request') {
+                            // Captura a requisição de edição vinda do HTML
+                            setMarkerToEdit(data.payload);
+                            setEditMode(true);
+                            setNewMarkerCoords({
+                                latitude: data.payload.lat,
+                                longitude: data.payload.lng
+                            });
+                            setModalVisible(true);
                         }
                     } catch (e) {
-                        console.log('[WebView Raw]:', event.nativeEvent.data);
+                        console.log('[WebView Error]:', e.message);
                     }
                 }}
             />
 
-            {/* Overlay de Carregamento Estilizado (Pílula Flutuante) */}
             {status.loading && (
                 <View style={styles.loadingPill}>
                     <ActivityIndicator size="small" color={COLORS.primaryDark} />
@@ -301,34 +233,13 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters }) => {
                 </View>
             )}
 
-            {/* Overlay de Erro Estilizado */}
-            {status.error && (
-                <View style={styles.errorCard}>
-                    <MaterialCommunityIcons name="alert-circle" size={24} color={COLORS.white} />
-                    <Text style={styles.errorText}>{status.error}</Text>
-                    <TouchableOpacity onPress={updateMapData} style={styles.retryButton}>
-                        <Text style={styles.retryText}>Tentar Novamente</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-
-            {/* Botão de Ação Flutuante (FAB) */}
             <TouchableOpacity
-                style={[
-                    styles.actionButton,
-                    { backgroundColor: isAddingMarker ? COLORS.danger : COLORS.primary }
-                ]}
+                style={[styles.actionButton, { backgroundColor: isAddingMarker ? COLORS.danger : COLORS.primary }]}
                 onPress={() => setIsAddingMarker(!isAddingMarker)}
-                activeOpacity={0.8}
             >
-                <MaterialCommunityIcons
-                    name={isAddingMarker ? "close" : "plus"}
-                    size={30}
-                    color="white"
-                />
+                <MaterialCommunityIcons name={isAddingMarker ? "close" : "plus"} size={30} color="white" />
             </TouchableOpacity>
 
-            {/* Aviso quando modo de adicionar está ativo */}
             {isAddingMarker && (
                 <View style={styles.instructionPill}>
                     <Text style={styles.instructionText}>Toque no mapa para adicionar</Text>
