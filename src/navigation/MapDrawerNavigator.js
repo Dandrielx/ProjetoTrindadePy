@@ -8,7 +8,7 @@ const Drawer = createDrawerNavigator();
 
 export default function MapDrawerNavigator({ userRole, userId }) {
     const [showHeatmap, setShowHeatmap] = useState(true);
-    const [showMarkers, setShowMarkers] = useState(false);
+    const [showMarkers, setShowMarkers] = useState(true);
     const [mapTheme, setMapTheme] = useState('light');
 
     // O estado principal dos filtros vive aqui

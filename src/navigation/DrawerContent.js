@@ -1,16 +1,17 @@
-// src/navigation/DrawerContent.js
 import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { View, Text, Switch, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+// Lista de poluentes atualizada para incluir a categoria de Pesquisa
 const POLLUTANT_TYPES = [
     { label: 'Plástico', value: 'plastico' },
     { label: 'Lixo (Geral)', value: 'lixo' },
     { label: 'Óleo', value: 'oleo' },
+    { label: 'Pesquisa Técnica', value: 'pesquisa' }, // Novo filtro solicitado
 ];
 
-const THEME_COLOR = '#81C784'; // Verde Pastel
+const THEME_COLOR = '#81C784';
 const TEXT_COLOR = '#2E3A33';
 const BG_COLOR = '#FFFFFF';
 
@@ -22,11 +23,12 @@ export function DrawerContent({ navigation, ...props }) {
         filters, setFilters
     } = props;
 
-    // --- LÓGICA (MANTIDA) ---
+    // Estado local para manipulação antes de "Aplicar"
     const [draftFilters, setDraftFilters] = useState(filters);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [datePickerTarget, setDatePickerTarget] = useState('startDate');
 
+    // Sincroniza com o estado global quando o Drawer é aberto
     useEffect(() => {
         setDraftFilters(filters);
     }, [filters]);
@@ -38,6 +40,7 @@ export function DrawerContent({ navigation, ...props }) {
     const handleDateChange = (event, selectedDate) => {
         setShowDatePicker(false);
         if (selectedDate) {
+            // Formato YYYY-MM-DD para compatibilidade com o Backend
             const dateString = selectedDate.toISOString().split('T')[0];
             setDraftFilters(prev => ({ ...prev, [datePickerTarget]: dateString }));
         }
@@ -45,7 +48,7 @@ export function DrawerContent({ navigation, ...props }) {
 
     const handleTypeToggle = (typeValue) => {
         setDraftFilters(prev => {
-            const newTypes = new Set(prev.types);
+            const newTypes = new Set(prev.types || []);
             if (newTypes.has(typeValue)) {
                 newTypes.delete(typeValue);
             } else {
@@ -55,12 +58,12 @@ export function DrawerContent({ navigation, ...props }) {
         });
     };
 
-    const clearDateFilters = () => {
-        setDraftFilters(prev => ({ ...prev, startDate: null, endDate: null }));
-    };
-
-    const clearTypeFilters = () => {
-        setDraftFilters(prev => ({ ...prev, types: [] }));
+    const clearFilters = (type) => {
+        if (type === 'date') {
+            setDraftFilters(prev => ({ ...prev, startDate: null, endDate: null }));
+        } else {
+            setDraftFilters(prev => ({ ...prev, types: [] }));
+        }
     };
 
     const applyFilters = () => {
@@ -68,7 +71,6 @@ export function DrawerContent({ navigation, ...props }) {
         navigation.closeDrawer();
     };
 
-    // Componente Auxiliar de Botão para manter estilo consistente
     const CustomButton = ({ title, onPress, variant = 'primary' }) => (
         <TouchableOpacity
             style={[styles.btn, variant === 'outline' ? styles.btnOutline : styles.btnPrimary]}
@@ -84,20 +86,16 @@ export function DrawerContent({ navigation, ...props }) {
         <View style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
 
-                {/* CABEÇALHO MODERNO */}
                 <View style={styles.header}>
-                    <View style={styles.avatarContainer}>
-                        <Text style={styles.avatarText}>US</Text>
-                    </View>
+                    <View style={styles.avatarContainer}><Text style={styles.avatarText}>US</Text></View>
                     <View>
-                        <Text style={styles.userName}>Usuário</Text>
-                        <Text style={styles.userEmail}>usuario@email.com</Text>
+                        <Text style={styles.userName}>Configurações</Text>
+                        <Text style={styles.userEmail}>Filtros de Visualização</Text>
                     </View>
                 </View>
 
                 {/* SEÇÃO VISUALIZAÇÃO */}
                 <Text style={styles.sectionTitle}>Visualização</Text>
-
                 <View style={styles.card}>
                     <View style={styles.row}>
                         <Text style={styles.label}>Mapa de Calor</Text>
@@ -130,11 +128,10 @@ export function DrawerContent({ navigation, ...props }) {
                     </View>
                 </View>
 
-                {/* SEÇÃO FILTROS */}
+                {/* SEÇÃO FILTROS DE PERÍODO */}
                 <Text style={styles.sectionTitle}>Filtros</Text>
-
                 <View style={styles.card}>
-                    <Text style={styles.subLabel}>Período</Text>
+                    <Text style={styles.subLabel}>Período das Coletas</Text>
                     <View style={styles.dateButtonsRow}>
                         <CustomButton
                             title={draftFilters.startDate || "Início"}
@@ -149,27 +146,32 @@ export function DrawerContent({ navigation, ...props }) {
                         />
                     </View>
                     {(draftFilters.startDate || draftFilters.endDate) && (
-                        <TouchableOpacity onPress={clearDateFilters} style={styles.clearLink}>
+                        <TouchableOpacity onPress={() => clearFilters('date')} style={styles.clearLink}>
                             <Text style={styles.clearLinkText}>Limpar Datas</Text>
                         </TouchableOpacity>
                     )}
 
                     <View style={styles.divider} />
 
-                    <Text style={[styles.subLabel, { marginTop: 10 }]}>Poluentes</Text>
+                    {/* SEÇÃO FILTROS DE TIPO */}
+                    <Text style={[styles.subLabel, { marginTop: 10 }]}>Categorias de Poluição</Text>
                     {POLLUTANT_TYPES.map(type => (
-                        <TouchableOpacity key={type.value} style={styles.checkboxRow} onPress={() => handleTypeToggle(type.value)}>
+                        <TouchableOpacity
+                            key={type.value}
+                            style={styles.checkboxRow}
+                            onPress={() => handleTypeToggle(type.value)}
+                        >
                             <MaterialCommunityIcons
-                                name={draftFilters.types.includes(type.value) ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+                                name={draftFilters.types?.includes(type.value) ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
                                 size={24}
-                                color={draftFilters.types.includes(type.value) ? THEME_COLOR : '#ccc'}
+                                color={draftFilters.types?.includes(type.value) ? THEME_COLOR : '#ccc'}
                             />
                             <Text style={styles.checkboxLabel}>{type.label}</Text>
                         </TouchableOpacity>
                     ))}
-                    {draftFilters.types.length > 0 && (
-                        <TouchableOpacity onPress={clearTypeFilters} style={styles.clearLink}>
-                            <Text style={styles.clearLinkText}>Limpar Tipos</Text>
+                    {draftFilters.types?.length > 0 && (
+                        <TouchableOpacity onPress={() => clearFilters('type')} style={styles.clearLink}>
+                            <Text style={styles.clearLinkText}>Limpar Categorias</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -194,172 +196,32 @@ export function DrawerContent({ navigation, ...props }) {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F7F9F8', // Fundo off-white levemente esverdeado/cinza
-        paddingTop: 40,
-    },
-    scrollContent: {
-        padding: 20,
-        paddingBottom: 40,
-    },
-    // Header
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 30,
-        paddingBottom: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
-    },
-    avatarContainer: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: THEME_COLOR,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 15,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3.84,
-        elevation: 3,
-    },
-    avatarText: {
-        color: '#FFF',
-        fontWeight: 'bold',
-        fontSize: 16
-    },
-    userName: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: TEXT_COLOR,
-    },
-    userEmail: {
-        fontSize: 14,
-        color: '#757575',
-    },
-    // Sections
-    sectionTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#757575',
-        textTransform: 'uppercase',
-        letterSpacing: 1.2,
-        marginBottom: 10,
-        marginTop: 10,
-    },
-    card: {
-        backgroundColor: BG_COLOR,
-        borderRadius: 12,
-        padding: 15,
-        marginBottom: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 2,
-    },
-    row: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 8,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: '#F0F0F0',
-        marginVertical: 10,
-    },
-    label: {
-        fontSize: 16,
-        color: TEXT_COLOR,
-    },
-    subLabel: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#757575',
-        marginBottom: 10,
-    },
-    // Buttons Helpers
-    btn: {
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 100,
-    },
-    btnPrimary: {
-        backgroundColor: THEME_COLOR,
-    },
-    btnOutline: {
-        borderWidth: 1,
-        borderColor: THEME_COLOR,
-        backgroundColor: 'transparent',
-    },
-    btnText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    btnTextPrimary: {
-        color: '#FFF',
-    },
-    btnTextOutline: {
-        color: THEME_COLOR,
-    },
-    // Date & Filters
-    dateButtonsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    dateTo: {
-        color: '#999',
-        marginHorizontal: 10,
-    },
-    checkboxRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 8,
-    },
-    checkboxLabel: {
-        marginLeft: 10,
-        fontSize: 16,
-        color: TEXT_COLOR,
-    },
-    clearLink: {
-        alignSelf: 'flex-end',
-        marginTop: 5,
-        marginBottom: 5,
-    },
-    clearLinkText: {
-        color: '#E57373', // Vermelho suave pastel
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    // Footer / Apply Button
-    footer: {
-        padding: 20,
-        backgroundColor: BG_COLOR,
-        borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
-    },
-    applyButton: {
-        backgroundColor: THEME_COLOR,
-        paddingVertical: 15,
-        borderRadius: 10,
-        alignItems: 'center',
-        shadowColor: THEME_COLOR,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 4,
-    },
-    applyButtonText: {
-        color: '#FFF',
-        fontSize: 16,
-        fontWeight: 'bold',
-    }
+    container: { flex: 1, backgroundColor: '#F7F9F8', paddingTop: 40 },
+    scrollContent: { padding: 20, paddingBottom: 40 },
+    header: { flexDirection: 'row', alignItems: 'center', marginBottom: 30, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E0E0E0' },
+    avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: THEME_COLOR, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    avatarText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
+    userName: { fontSize: 18, fontWeight: 'bold', color: TEXT_COLOR },
+    userEmail: { fontSize: 14, color: '#757575' },
+    sectionTitle: { fontSize: 14, fontWeight: '700', color: '#757575', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10, marginTop: 10 },
+    card: { backgroundColor: BG_COLOR, borderRadius: 12, padding: 15, marginBottom: 20, elevation: 2 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
+    divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 10 },
+    label: { fontSize: 16, color: TEXT_COLOR },
+    subLabel: { fontSize: 14, fontWeight: '600', color: '#757575', marginBottom: 10 },
+    btn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', minWidth: 100 },
+    btnPrimary: { backgroundColor: THEME_COLOR },
+    btnOutline: { borderWidth: 1, borderColor: THEME_COLOR, backgroundColor: 'transparent' },
+    btnText: { fontSize: 14, fontWeight: '500' },
+    btnTextPrimary: { color: '#FFF' },
+    btnTextOutline: { color: THEME_COLOR },
+    dateButtonsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    dateTo: { color: '#999', marginHorizontal: 10 },
+    checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+    checkboxLabel: { marginLeft: 10, fontSize: 16, color: TEXT_COLOR },
+    clearLink: { alignSelf: 'flex-end', marginTop: 5, marginBottom: 5 },
+    clearLinkText: { color: '#E57373', fontSize: 12, fontWeight: '600' },
+    footer: { padding: 20, backgroundColor: BG_COLOR, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
+    applyButton: { backgroundColor: THEME_COLOR, paddingVertical: 15, borderRadius: 10, alignItems: 'center', elevation: 4 },
+    applyButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });

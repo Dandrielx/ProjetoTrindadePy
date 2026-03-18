@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import {
     Modal,
@@ -36,6 +37,9 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
     const [description, setDescription] = useState('');
     const [image, setImage] = useState(null);
     const [loadingImage, setLoadingImage] = useState(false);
+    const [dataColeta, setDataColeta] = useState(new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(new Date()); // Inicia com a data atual
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     // ESTADOS CIDADÃO
     const [type, setType] = useState('lixo');
@@ -48,6 +52,14 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
     const [suggestedFields, setSuggestedFields] = useState([]);
     const [customValues, setCustomValues] = useState({});
     const [newFields, setNewFields] = useState([]);
+
+        const onChangeDate = (event, selectedDate) => {
+        // No Android, o 'event.type' pode ser 'set' ou 'dismissed'
+        setShowDatePicker(false); 
+        if (selectedDate) {
+            setDate(selectedDate);
+        }
+        };
 
     // 1. Carregar campos sugeridos do Backend
     useEffect(() => {
@@ -70,12 +82,15 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
                 const proj = markerToEdit.projeto || 'comunitario';
                 setProjeto(proj === 'comunitario' ? 'maranhao' : proj);
                 setDescription(markerToEdit.description || '');
+                setDataColeta(markerToEdit.data.split('T')[0]);
 
                 // Campos da Aba Comum (Cidadão)
                 setType(markerToEdit.type || 'lixo');
                 setIntensity(String(markerToEdit.intensity || '5'));
                 setIsWater(!!markerToEdit.agua);
                 setLocalType(markerToEdit.tipo_local || 'unico');
+
+
 
                 // Definição de Aba e Metadados Técnicos
                 if (proj === 'comunitario') {
@@ -88,6 +103,7 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
                     setCustomValues(detailsMap);
                 }
             } else {
+                setDataColeta(new Date().toISOString().split('T')[0]);
                 // Reset Total para Novo Ponto
                 setDescription('');
                 setImage(null);
@@ -118,6 +134,8 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
         const finalLat = parseFloat(latStr);
         const finalLng = parseFloat(lngStr);
 
+        const dataFormatada = date.toISOString().split('T')[0]; // Gera "2024-03-17"
+
         if (isNaN(finalLat) || isNaN(finalLng)) {
             alert("Coordenadas inválidas.");
             return;
@@ -129,8 +147,10 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
             .map(key => ({ chave: key.toLowerCase(), valor: String(customValues[key]) }));
 
         let markerData = {
+            marcacao_id: markerToEdit ? markerToEdit.id : null,
             latitude: finalLat,
             longitude: finalLng,
+            data_coleta: dataFormatada,
             descricao: description,
             projeto: projeto,
             detalhes: detalhes,
@@ -199,6 +219,28 @@ const AddMarkerModal = ({ visible, onClose, onSave, initialCoords, userRole, edi
                             </>
                         ) : (
                             <>
+                                <Text style={styles.label}>Data da Coleta</Text>
+                                <TouchableOpacity 
+                                    style={styles.input} 
+                                    onPress={() => setShowDatePicker(true)}
+                                >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <MaterialCommunityIcons name="calendar" size={20} color={COLORS.primaryDark} />
+                                        <Text style={{ marginLeft: 10, color: COLORS.text }}>
+                                            {date.toLocaleDateString('pt-BR')}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                {showDatePicker && (
+                                    <DateTimePicker
+                                        value={date}
+                                        mode="date"
+                                        display="default"
+                                        onChange={onChangeDate} // Agora a função existe
+                                        maximumDate={new Date()} // Opcional: não permite datas futuras
+                                    />
+                                )}
                                 <Text style={styles.label}>Coordenadas (Edição Manual)</Text>
                                 <View style={styles.row}>
                                     <View style={{ flex: 1, marginRight: 10 }}><Text style={styles.subLabel}>Latitude</Text><TextInput style={styles.input} value={latStr} onChangeText={setLatStr} keyboardType="numeric" /></View>

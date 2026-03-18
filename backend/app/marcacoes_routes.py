@@ -1,199 +1,236 @@
 from flask import Blueprint, request, jsonify
 from .database import SessionLocal, engine
-from .models import Marcacao, Usuario, MarcacaoDetalhe
+from .models import Marcacao, Usuario, MarcacaoDetalhe, Coleta
 from .auth import token_required
 from datetime import datetime, timedelta
+from sqlalchemy.orm import joinedload
 
 # Cria um novo Blueprint para as marcações
 marcacoes_bp = Blueprint('marcacoes', __name__, url_prefix='/api/marcacoes')
 
 @marcacoes_bp.route('/', methods=['GET'])
 def get_all_marcacoes():
-    """
-    Rota para obter as marcações, agora com a lógica de filtro corrigida e com depuração.
-    """
     db = SessionLocal()
     try:
-        # Imprime os argumentos recebidos para depuração
-        print(f"Filtros recebidos: {request.args}")
+        # 1. Pega os parâmetros da URL enviados pelo Drawer
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        types = request.args.get('types') # Recebe string "lixo,oleo,pesquisa"
 
-        query = db.query(Marcacao)
+        # 2. Inicia a query com Join na tabela de Coletas para poder filtrar
+        query = db.query(Marcacao).join(Coleta)
 
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
-        types_str = request.args.get('types')
+        # 3. Filtro por Categoria (tipo_poluicao)
+        if types:
+            lista_tipos = types.split(',')
+            query = query.filter(Coleta.tipo_poluicao.in_(lista_tipos))
 
-        # Filtro de data inicial
-        if start_date_str:
-            start_date = datetime.fromisoformat(start_date_str)
-            query = query.filter(Marcacao.data_criacao >= start_date)
-            print(f"A aplicar filtro de data inicial: >= {start_date_str}")
-
-        # Filtro de data final
-        if end_date_str:
-            # Adiciona 1 dia e usa '<' para garantir que o dia final completo é incluído
-            end_date = datetime.fromisoformat(end_date_str) + timedelta(days=1)
-            query = query.filter(Marcacao.data_criacao < end_date)
-            print(f"A aplicar filtro de data final: < {end_date.strftime('%Y-%m-%d')}")
-
-        # Filtro de tipos
-        if types_str:
-            # Remove espaços em branco e garante que a lista não está vazia
-            type_list = [t.strip() for t in types_str.split(',') if t.strip()]
-            if type_list:
-                query = query.filter(Marcacao.tipo_poluicao.in_(type_list))
-                print(f"A aplicar filtro de tipos: {type_list}")
-
-        marcacoes = query.order_by(Marcacao.data_criacao.desc()).all()
+        # 4. Filtro por Período
+        if start_date:
+            dt_inicio = datetime.fromisoformat(start_date)
+            query = query.filter(Coleta.data_coleta >= dt_inicio)
         
-        print(f"Encontradas {len(marcacoes)} marcações após os filtros.")
+        if end_date:
+            # Soma 1 dia para incluir o dia final completo até 23:59:59
+            dt_fim = datetime.fromisoformat(end_date) + timedelta(days=1)
+            query = query.filter(Coleta.data_coleta < dt_fim)
 
-        resultado = [
-            {
-                "id": marcacao.id,
-                "lat": marcacao.latitude,
-                "lng": marcacao.longitude,
-                "usuario_id": marcacao.usuario_id,
-                "intensity": marcacao.intensidade,
-                "type": marcacao.tipo_poluicao,
-                "projeto": marcacao.projeto,
-                "agua": marcacao.agua,
-                "tipo_local": marcacao.tipo_local,
-                "description": marcacao.descricao,
-                "image_url": marcacao.imagem_url,
-                "data_criacao": marcacao.data_criacao.isoformat() if marcacao.data_criacao else None,
-                "detalhes": [
-                    {"chave": d.chave, "valor": d.valor} 
-                    for d in marcacao.detalhes
-                ]
-            }
-            for marcacao in marcacoes
-        ]
+        # 5. Executa a query carregando as relações e removendo duplicatas
+        # (Um ponto geográfico pode ter várias coletas que batem no filtro)
+        marcacoes = query.options(
+            joinedload(Marcacao.coletas).joinedload(Coleta.detalhes)
+        ).distinct().all()
+        
+        resultado = []
+        for m in marcacoes:
+            # Ordenamos as coletas da mais recente para a mais antiga para o histórico no mapa
+            coletas_ordenadas = sorted(m.coletas, key=lambda x: x.data_coleta, reverse=True)
+            
+            if not coletas_ordenadas:
+                continue
+
+            resultado.append({
+                "id": m.id,
+                "lat": m.latitude,
+                "lng": m.longitude,
+                "projeto": m.projeto,
+                "agua": m.agua,
+                "tipo_local": m.tipo_local,
+                "usuario_id": m.usuario_id,
+                # Enviamos o histórico completo de coletas para a navegação por flechas no mapa
+                "coletas": [{
+                    "id": c.id,
+                    "type": c.tipo_poluicao,
+                    "intensity": c.intensidade,
+                    "description": c.descricao,
+                    "image_url": c.imagem_url,
+                    "data": c.data_coleta.isoformat(),
+                    "detalhes": [{"chave": d.chave, "valor": d.valor} for d in c.detalhes]
+                } for c in coletas_ordenadas]
+            })
         return jsonify(resultado), 200
     except Exception as e:
-        print(f"ERRO na rota de marcações: {e}")
-        return jsonify({"error": "Erro interno no servidor"}), 500
+        print(f"Erro no filtro: {e}")
+        return jsonify({"error": str(e)}), 500
     finally:
         db.close()
 
 @marcacoes_bp.route('/', methods=['POST'])
-@token_required # <-- Rota protegida.
+@token_required
 def create_marcacao(current_user):
     """
-    Rota para criar uma nova marcação.
-    Só pode ser acedida por um utilizador logado.
+    Cria uma nova marcação (Ponto + Coleta) OU adiciona uma nova Coleta 
+    a um ponto geográfico existente via marcacao_id.
     """
     data = request.get_json()
-    
-    # LOG DE DEPURAÇÃO: Verifique no terminal o que o front está enviando
-    print(f"Dados recebidos no POST: {data}")
-
-    # Campos obrigatórios (incluí os novos já que são nullable=False no banco)
-    required_fields = ['latitude', 'longitude', 'intensidade', 'tipo_poluicao', 'agua', 'tipo_local', 'projeto']
-    
-    if not data or not all(field in data for field in required_fields):
-        # Retorna quais campos estão faltando para facilitar o seu debug
-        missing = [f for f in required_fields if f not in (data or {})]
-        return jsonify({"error": "Dados em falta", "missing_fields": missing}), 400
-
     db = SessionLocal()
+    
     try:
-        nova_marcacao = Marcacao(
-            latitude=data['latitude'],
-            longitude=data['longitude'],
-            intensidade=data['intensidade'],
-            tipo_poluicao=data['tipo_poluicao'],
-            agua=data['agua'],
-            tipo_local=data['tipo_local'],
-            projeto=data['projeto'],
-            descricao=data.get('descricao'), # .get() para campos opcionais
+        # 1. VERIFICA SE É UM PONTO EXISTENTE OU NOVO
+        marcacao_id = data.get('marcacao_id')
+        
+        if not marcacao_id:
+            # CRIAR NOVO PONTO GEOGRÁFICO (Marcacao)
+            nova_marcacao = Marcacao(
+                latitude=data['latitude'],
+                longitude=data['longitude'],
+                projeto=data.get('projeto', 'comunitario'),
+                agua=data.get('agua', False),
+                tipo_local=data.get('tipo_local', 'unico'),
+                usuario_id=current_user.id
+            )
+            db.add(nova_marcacao)
+            db.flush() # Gera o ID sem fechar a transação
+            marcacao_id = nova_marcacao.id
+        else:
+            # PONTO EXISTENTE: Valida se o ID existe
+            ponto_existente = db.query(Marcacao).filter(Marcacao.id == marcacao_id).first()
+            if not ponto_existente:
+                return jsonify({"error": "Ponto geográfico não encontrado"}), 404
+
+        # 2. CRIAR A COLETA (Evento temporal/histórico)
+        # Suporte para data manual enviada pelo modal
+        data_manual = data.get('data_coleta')
+        
+        nova_coleta = Coleta(
+            marcacao_id=marcacao_id,
+            usuario_id=current_user.id,
+            intensidade=data.get('intensidade', 5),
+            tipo_poluicao=data.get('tipo_poluicao', 'lixo'),
+            descricao=data.get('descricao'),
             imagem_url=data.get('imagem_url'),
-            usuario_id=current_user.id
+            data_coleta=datetime.fromisoformat(data_manual) if data_manual else datetime.now()
         )
-        db.add(nova_marcacao)
-        detalhes_data = data.get('detalhes', []) # Espera lista de {chave, valor}
+        db.add(nova_coleta)
+        db.flush()
+
+        # 3. ADICIONAR DETALHES TÉCNICOS
+        detalhes_data = data.get('detalhes', [])
         for det in detalhes_data:
             novo_detalhe = MarcacaoDetalhe(
                 chave=det['chave'],
                 valor=str(det['valor']),
-                marcacao=nova_marcacao
+                coleta_id=nova_coleta.id
             )
             db.add(novo_detalhe)
+
         db.commit()
-        db.refresh(nova_marcacao)
-        
-        return jsonify({"message": "Marcação criada com sucesso!", "id": nova_marcacao.id}), 201
+        return jsonify({"message": "Operação realizada com sucesso!", "id": marcacao_id}), 201
+
     except Exception as e:
         db.rollback()
-        print(f"ERRO INTERNO: {e}") 
-        return jsonify({"error": "Erro ao criar marcação", "details": str(e)}), 500
-    finally:
-        db.close()
-        
-@marcacoes_bp.route('/config/campos/<projeto>', methods=['GET'])
-def get_projeto_fields(projeto):
-    """Retorna chaves únicas de metadados já usadas no projeto para sugestão no App."""
-    db = SessionLocal()
-    try:
-        # Busca todas as chaves distintas para aquele projeto específico
-        campos = db.query(MarcacaoDetalhe.chave).join(Marcacao).filter(
-            Marcacao.projeto == projeto
-        ).distinct().all()
-        return jsonify([c[0] for c in campos]), 200
+        return jsonify({"error": str(e)}), 500
     finally:
         db.close()
 
 @marcacoes_bp.route('/<int:id>', methods=['PUT'])
 @token_required
 def update_marcacao(current_user, id):
-    """Atualiza uma marcação existente e seus metadados."""
+    """
+    Atualiza o ponto geográfico e a ÚLTIMA coleta vinculada a ele.
+    Também permite alterar a data da coleta.
+    """
     data = request.get_json()
     db = SessionLocal()
     try:
         marcacao = db.query(Marcacao).filter(Marcacao.id == id).first()
         if not marcacao:
-            return jsonify({"error": "Não encontrada"}), 404
+            return jsonify({"error": "Marcação não encontrada"}), 404
         
-        # 1. Atualiza campos geográficos e descrição
+        # 1. Atualiza dados geográficos (Ponto)
         marcacao.latitude = data.get('latitude', marcacao.latitude)
         marcacao.longitude = data.get('longitude', marcacao.longitude)
-        marcacao.descricao = data.get('descricao', marcacao.descricao)
         
-        # 2. Lógica da Imagem: Mantém a atual se 'imagem_url' não for enviada ou for nula
-        nova_imagem = data.get('imagem_url')
-        if nova_imagem:
-            marcacao.imagem_url = nova_imagem
-
-        # 3. Atualiza campos específicos do Cidadão (Aba Comum)
-        # Estes campos agora são atualizados corretamente
-        marcacao.tipo_poluicao = data.get('tipo_poluicao', marcacao.tipo_poluicao)
-        marcacao.agua = data.get('agua', marcacao.agua)
-        marcacao.tipo_local = data.get('tipo_local', marcacao.tipo_local)
+        # 2. Busca a última coleta para atualizar os dados e a data
+        ultima_coleta = db.query(Coleta).filter(Coleta.marcacao_id == id).order_by(Coleta.data_coleta.desc()).first()
         
-        # 4. Lógica de Intensidade
-        if marcacao.projeto == 'comunitario':
-            marcacao.intensidade = data.get('intensidade', marcacao.intensidade)
-        else:
-            # Se for pesquisa, mantém o padrão 5 conforme sua exigência
-            marcacao.intensidade = 5
+        if ultima_coleta:
+            ultima_coleta.descricao = data.get('descricao', ultima_coleta.descricao)
+            ultima_coleta.tipo_poluicao = data.get('tipo_poluicao', ultima_coleta.tipo_poluicao)
+            ultima_coleta.intensidade = data.get('intensidade', ultima_coleta.intensidade)
+            
+            # Atualização manual da data da coleta
+            data_manual = data.get('data_coleta')
+            if data_manual:
+                ultima_coleta.data_coleta = datetime.fromisoformat(data_manual)
+            
+            if data.get('imagem_url'):
+                ultima_coleta.imagem_url = data.get('imagem_url')
 
-        # 5. Atualiza Detalhes (EAV) - Limpa e reinsere se houver novos dados técnicos
-        # Nota: Se for 'comunitario', o modal já envia detalhes como []
-        db.query(MarcacaoDetalhe).filter(MarcacaoDetalhe.marcacao_id == id).delete()
-        detalhes = data.get('detalhes', [])
-        for det in detalhes:
-            if det.get('chave') and det.get('valor'):
-                novo_det = MarcacaoDetalhe(
-                    chave=det['chave'].lower(), 
-                    valor=str(det['valor']), 
-                    marcacao_id=id
-                )
-                db.add(novo_det)
+            # 3. Atualiza Detalhes da Coleta (Limpa e reinsere para evitar duplicidade)
+            db.query(MarcacaoDetalhe).filter(MarcacaoDetalhe.coleta_id == ultima_coleta.id).delete()
+            for det in data.get('detalhes', []):
+                if det.get('chave') and det.get('valor'):
+                    db.add(MarcacaoDetalhe(
+                        chave=det['chave'].lower(), 
+                        valor=str(det['valor']), 
+                        coleta_id=ultima_coleta.id
+                    ))
 
         db.commit()
-        return jsonify({"message": "Atualizado com sucesso"}), 200
+        return jsonify({"message": "Marcação e coleta atualizadas com sucesso!"}), 200
     except Exception as e:
         db.rollback()
-        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@marcacoes_bp.route('/config/campos/<projeto>', methods=['GET'])
+def get_projeto_fields(projeto):
+    db = SessionLocal()
+    try:
+        campos = db.query(MarcacaoDetalhe.chave).join(Coleta).join(Marcacao).filter(
+            Marcacao.projeto == projeto
+        ).distinct().all()
+        return jsonify([c[0] for c in campos if c[0]]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@marcacoes_bp.route('/detalhes/chaves', methods=['GET'])
+def get_unique_keys():
+    db = SessionLocal()
+    try:
+        chaves_query = db.query(MarcacaoDetalhe.chave).distinct().all()
+        return jsonify([c[0] for c in chaves_query if c[0]]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@marcacoes_bp.route('/detalhes/template/<int:marcacao_id>', methods=['GET'])
+def get_coleta_template(marcacao_id):
+    db = SessionLocal()
+    try:
+        ultima_coleta = db.query(Coleta).filter(
+            Coleta.marcacao_id == marcacao_id
+        ).order_by(Coleta.data_coleta.desc()).first()
+
+        if not ultima_coleta:
+            return jsonify([]), 200
+
+        template = [{"chave": d.chave, "valor": ""} for d in ultima_coleta.detalhes]
+        return jsonify(template), 200
     finally:
         db.close()

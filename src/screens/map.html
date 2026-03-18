@@ -34,7 +34,6 @@
             cursor: crosshair !important;
         }
 
-        /* Estilos do Popup Personalizado */
         .popup-container {
             min-width: 180px;
             max-width: 240px;
@@ -49,15 +48,6 @@
             margin-bottom: 8px;
             background-color: #f0f0f0;
             display: block;
-        }
-
-        .popup-title {
-            font-size: 14px;
-            font-weight: bold;
-            color: #2E7D32;
-            text-transform: uppercase;
-            display: block;
-            margin-bottom: 4px;
         }
 
         .popup-info {
@@ -81,7 +71,6 @@
         }
 
         .edit-btn {
-            background-color: #81C784;
             color: white;
             border: none;
             padding: 10px;
@@ -99,6 +88,9 @@
     <script>
         let map, tileLayer, heatLayer, markerLayer;
         let BASE_URL = "";
+        let currentIndices = {};
+        let markers = {};
+        let pollutionPoints = [];
 
         const postMessage = (type, payload) => {
             if (window.ReactNativeWebView) {
@@ -106,121 +98,131 @@
             }
         };
 
-        window.editMarker = (markerData) => {
-            postMessage('edit_marker_request', markerData);
+        window.editMarker = (data) => postMessage('edit_marker_request', data);
+
+        window.addColeta = (id) => {
+            const point = pollutionPoints.find(p => p.id === id);
+            postMessage('add_coleta_request', point);
         };
 
-        // --- FUNÇÕES DE VISIBILIDADE (Necessárias para os filtros do App funcionarem) ---
-        function setHeatmapVisible(visible) {
-            if (map && heatLayer) {
-                if (visible) map.addLayer(heatLayer);
-                else map.removeLayer(heatLayer);
+        window.changeColeta = (pointId, delta) => {
+            const point = pollutionPoints.find(p => p.id === pointId);
+            let newIndex = (currentIndices[pointId] || 0) + delta;
+            if (newIndex >= 0 && newIndex < point.coletas.length) {
+                currentIndices[pointId] = newIndex;
+                markers[pointId].getPopup().setContent(updatePopupContent(pointId));
             }
-        }
-        function setMarkersVisible(visible) {
-            if (map && markerLayer) {
-                if (visible) map.addLayer(markerLayer);
-                else map.removeLayer(markerLayer);
+        };
+
+        function updatePopupContent(pointId) {
+            const point = pollutionPoints.find(p => p.id === pointId);
+            const index = currentIndices[pointId] || 0;
+            const coleta = point.coletas[index];
+            const total = point.coletas.length;
+
+            let html = `<div class="popup-container">`;
+
+            if (total > 1) {
+                html += `
+                    <button onclick="event.stopPropagation(); window.changeColeta(${point.id}, 1)" ...>◀</button>
+                    <span ...>COLETA ${total - index} de ${total}</span>
+                    <button onclick="event.stopPropagation(); window.changeColeta(${point.id}, -1)" ...>▶</button>
+                `;
             }
+
+            if (coleta.image_url) {
+                const fullImgUrl = coleta.image_url.startsWith('http') ? coleta.image_url : `${BASE_URL}${coleta.image_url}`;
+                html += `<img src="${fullImgUrl}" class="popup-image" onerror="this.style.display='none'" />`;
+            }
+
+            html += `<div class="popup-info">`;
+            html += `<span style="font-size:10px; color:#999;">${new Date(coleta.data).toLocaleDateString()}</span><br>`;
+            html += `<b>PROJETO:</b> ${point.projeto.toUpperCase()}<br>`;
+            html += `<b>TIPO:</b> ${coleta.type.toUpperCase()}<br>`;
+
+            if (point.projeto === 'comunitario') {
+                html += `<b>INTENSIDADE:</b> ${coleta.intensity}/10<br>`;
+            }
+
+            if (coleta.description) {
+                html += `<hr class="popup-divider"><i>"${coleta.description}"</i>`;
+            }
+
+            if (coleta.detalhes && coleta.detalhes.length > 0) {
+                html += `<hr class="popup-divider"><b>DADOS TÉCNICOS:</b>`;
+                coleta.detalhes.forEach(det => {
+                    html += `<div class="popup-tech-row"><b>${det.chave.toUpperCase()}:</b> ${det.valor}</div>`;
+                });
+            }
+            html += `</div>`;
+
+            const editData = JSON.stringify({ ...point, ...coleta, detalhes: coleta.detalhes }).replace(/"/g, '&quot;');
+            html += `
+            <div style="display:flex; gap:5px; margin-top:10px;">
+                <button class="edit-btn" style="flex:1; background-color:#81C784;" onclick='window.editMarker(${editData})'>Editar</button>
+                <button class="edit-btn" style="flex:1; background-color:#2E7D32" onclick="window.addColeta(${point.id})">+ Coleta</button>
+            </div></div>`;
+
+            return html;
         }
 
-        function setTheme(theme) {
-            const mapContainer = document.getElementById('map');
-            if (theme === 'dark') {
-                mapContainer.classList.add('dark');
-                tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
-            } else {
-                mapContainer.classList.remove('dark');
-                tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png');
-            }
+        function setHeatmapVisible(v) { if (map && heatLayer) v ? map.addLayer(heatLayer) : map.removeLayer(heatLayer); }
+        function setMarkersVisible(v) { if (map && markerLayer) v ? map.addLayer(markerLayer) : map.removeLayer(markerLayer); }
+        function setTheme(t) {
+            const c = document.getElementById('map');
+            if (t === 'dark') { c.classList.add('dark'); tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'); }
+            else { c.classList.remove('dark'); tileLayer.setUrl('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'); }
         }
 
-        function toggleAddMarkerMode(enable) {
-            const mapContainer = document.getElementById('map');
-            if (enable) {
-                mapContainer.classList.add('crosshair-cursor');
-                map.on('click', (e) => postMessage('marker_added', e.latlng));
-            } else {
-                mapContainer.classList.remove('crosshair-cursor');
-                map.off('click');
-            }
+        function toggleAddMarkerMode(e) {
+            if (e) { document.getElementById('map').classList.add('crosshair-cursor'); map.on('click', (ev) => postMessage('marker_added', ev.latlng)); }
+            else { document.getElementById('map').classList.remove('crosshair-cursor'); map.off('click'); }
         }
 
         function init(initialData) {
             try {
-                const { userCoords, pollutionPoints, showHeatmap, showMarkers, apiBaseUrl } = initialData;
+                const { userCoords, pollutionPoints: data, showHeatmap, showMarkers, apiBaseUrl } = initialData;
                 BASE_URL = apiBaseUrl;
+                pollutionPoints = data;
 
                 if (!map) {
                     map = L.map('map', { zoomControl: false }).setView([userCoords.latitude, userCoords.longitude], 13);
-                    tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
-                    L.marker([userCoords.latitude, userCoords.longitude]).addTo(map).bindPopup('Você está aqui!');
+                    tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
                 }
 
-                // Limpa camadas existentes antes de recriar
                 if (heatLayer) map.removeLayer(heatLayer);
                 if (markerLayer) map.removeLayer(markerLayer);
 
-                // Configuração Heatmap
-                const heatData = pollutionPoints.map(p => [p.lat, p.lng, (p.projeto !== 'comunitario' ? 5 : p.intensity) / 2]);
-                heatLayer = L.heatLayer(heatData, { radius: 70, blur: 35, maxZoom: 18 });
+                const heatData = pollutionPoints.map(p => [p.lat, p.lng, (p.coletas[0]?.intensity || 5) / 2]);
+                heatLayer = L.heatLayer(heatData, { radius: 70, blur: 35 });
 
                 markerLayer = L.layerGroup();
                 pollutionPoints.forEach(point => {
-                    let markerColor = '#81C784';
-                    if (point.projeto === 'maranhao') markerColor = '#FFA500';
-                    else if (point.projeto === 'trindade') markerColor = '#000080';
-                    else if (point.type === 'oleo') markerColor = 'black';
+                    currentIndices[point.id] = 0;
+                    const ultima = point.coletas[0];
+                    let color = '#81C784';
+                    if (point.projeto === 'maranhao') color = '#FFA500';
+                    else if (point.projeto === 'trindade') color = '#000080';
+                    else if (ultima?.type === 'oleo') color = 'black';
+                    else if (ultima?.type === 'plastico') color = 'red';
 
-                    const svgIcon = L.divIcon({
-                        html: `<svg height="22" width="22"><circle cx="11" cy="11" r="9" stroke="white" stroke-width="2" fill="${markerColor}" /></svg>`,
+                    const icon = L.divIcon({
+                        html: `<svg height="22" width="22"><circle cx="11" cy="11" r="9" stroke="white" stroke-width="2" fill="${color}" /></svg>`,
                         className: '', iconSize: [22, 22], iconAnchor: [11, 11]
                     });
 
-                    const marker = L.marker([point.lat, point.lng], { icon: svgIcon });
-
-                    let popupHtml = `<div class="popup-container">`;
-
-                    // Foto
-                    if (point.image_url) {
-                        const fullImgUrl = point.image_url.startsWith('http') ? point.image_url : `${BASE_URL}${point.image_url}`;
-                        popupHtml += `<img src="${fullImgUrl}" class="popup-image" onerror="this.style.display='none'" />`;
-                    }
-
-                    popupHtml += `<span class="popup-title">${point.projeto.toUpperCase()}</span>`;
-                    popupHtml += `<div class="popup-info">`;
-
-                    if (point.projeto === 'comunitario') {
-                        popupHtml += `<b>Tipo:</b> ${point.type}<br>`;
-                        popupHtml += `<b>Intensidade:</b> ${point.intensity}/10<br>`;
-                    }
-
-                    if (point.description) {
-                        popupHtml += `<hr class="popup-divider"><i>"${point.description}"</i>`;
-                    }
-
-                    // DADOS TÉCNICOS (Puxando de marcacoes_detalhes)
-                    if (point.detalhes && point.detalhes.length > 0) {
-                        popupHtml += `<hr class="popup-divider"><b>DADOS DA PESQUISA:</b>`;
-                        point.detalhes.forEach(det => {
-                            // Exibe chave e valor um abaixo do outro
-                            popupHtml += `<div class="popup-tech-row"><b>${det.chave.toUpperCase()}:</b> ${det.valor}</div>`;
-                        });
-                    }
-
-                    popupHtml += `</div>`;
-                    const pointJson = JSON.stringify(point).replace(/"/g, '&quot;');
-                    popupHtml += `<button class="edit-btn" onclick="window.editMarker(${pointJson})">Editar Dados</button></div>`;
-
-                    marker.bindPopup(popupHtml);
-                    markerLayer.addLayer(marker);
+                    const m = L.marker([point.lat, point.lng], { icon: icon });
+                    markers[point.id] = m;
+                    m.bindPopup(() => updatePopupContent(point.id), {
+                        closeOnClick: false, // O popup não fecha se clicar no mapa
+                        autoPan: true
+                    });
+                    markerLayer.addLayer(m);
                 });
 
-                // Aplica visibilidade inicial baseada nos filtros
                 if (showHeatmap) map.addLayer(heatLayer);
                 if (showMarkers) map.addLayer(markerLayer);
-
-            } catch (e) { console.log("Erro HTML:", e.message); }
+            } catch (e) { console.log("Erro Init:", e.message); }
         }
     </script>
 </body>

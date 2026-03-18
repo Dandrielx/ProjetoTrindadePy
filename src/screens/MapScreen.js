@@ -31,7 +31,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
     const [modalVisible, setModalVisible] = useState(false);
     const [newMarkerCoords, setNewMarkerCoords] = useState(null);
 
-    // ESTADOS PARA EDIÇÃO
+    // ESTADOS PARA EDIÇÃO / NOVA COLETA
     const [editMode, setEditMode] = useState(false);
     const [markerToEdit, setMarkerToEdit] = useState(null);
 
@@ -58,12 +58,14 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
             if (permissionStatus !== 'granted') throw new Error('Permissão negada.');
 
             const currentLocation = await Location.getCurrentPositionAsync({});
+
+            // Filtros da API
             const params = new URLSearchParams();
             if (filters.startDate) params.append('start_date', filters.startDate);
             if (filters.endDate) params.append('end_date', filters.endDate);
             if (filters.types && filters.types.length > 0) params.append('types', filters.types.join(','));
 
-            const response = await fetch(`${API_URL}/marcacoes?${params.toString()}`);
+            const response = await fetch(`${API_URL}/marcacoes/?${params.toString()}`);
             if (!response.ok) throw new Error('Falha ao buscar dados.');
 
             const pollutionData = await response.json();
@@ -82,6 +84,7 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
         }
     };
 
+    // Sincroniza estados do App com a WebView
     useEffect(() => {
         webviewRef.current?.injectJavaScript(`toggleAddMarkerMode(${isAddingMarker}); true;`);
     }, [isAddingMarker]);
@@ -98,17 +101,6 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
     useEffect(() => {
         if (initialHtml) updateMapData();
     }, [filters, initialHtml]);
-
-    const onMapMarkerAdded = (coords) => {
-        setNewMarkerCoords({
-            latitude: coords.latitude || coords.lat,
-            longitude: coords.longitude || coords.lng
-        });
-        setEditMode(false);
-        setMarkerToEdit(null);
-        setModalVisible(true);
-        setIsAddingMarker(false);
-    };
 
     const handleSaveMarker = async (marcacaoData, imageAsset, isEdit = false, markerId = null) => {
         const url = isEdit ? `${API_URL}/marcacoes/${markerId}` : `${API_URL}/marcacoes/`;
@@ -192,36 +184,57 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
                 onMessage={(event) => {
                     try {
                         const data = JSON.parse(event.nativeEvent.data);
-                        if (data.type === 'edit_marker_request') {
+
+                        // 1. Novo ponto clicado no mapa
+                        if (data.type === 'marker_added') {
+                            setNewMarkerCoords({
+                                latitude: data.payload.latitude || data.payload.lat,
+                                longitude: data.payload.longitude || data.payload.lng
+                            });
+                            setEditMode(false);
+                            setMarkerToEdit(null);
+                            setModalVisible(true);
+                            setIsAddingMarker(false);
+                        }
+
+                        // 2. Edição de dados existentes
+                        else if (data.type === 'edit_marker_request') {
                             const marker = data.payload;
 
-                            // REGRA: Se for comunitário, apenas o dono edita. 
-                            // Pesquisadores podem editar dados de pesquisa.
+                            // Regra de Propriedade: Apenas dono edita comunitário
                             const isOwner = marker.usuario_id === userId;
-
-                            if (marker.projeto === 'comunitario' && !isOwner) {
-                                Alert.alert("Acesso Negado", "Você só pode editar suas próprias marcações comunitárias.");
+                            if (marker.projeto === 'comunitario' && !isOwner && userRole !== 'pesquisador') {
+                                Alert.alert("Acesso Negado", "Você só pode editar suas próprias marcações.");
                                 return;
                             }
+
                             setMarkerToEdit(marker);
                             setEditMode(true);
                             setNewMarkerCoords({ latitude: marker.lat, longitude: marker.lng });
                             setModalVisible(true);
                         }
-                        if (data.type === 'marker_added') {
-                            onMapMarkerAdded(data.payload);
-                        } else if (data.type === 'edit_marker_request') {
-                            // Captura a requisição de edição vinda do HTML
-                            setMarkerToEdit(data.payload);
-                            setEditMode(true);
-                            setNewMarkerCoords({
-                                latitude: data.payload.lat,
-                                longitude: data.payload.lng
+
+                        // 3. Adição de nova coleta (Série Temporal)
+                        else if (data.type === 'add_coleta_request') {
+                            const ponto = data.payload;
+                            // Pega a última coleta para sugerir os nomes dos campos técnicos
+                            const ultimaColeta = ponto.coletas[0];
+                            const template = ultimaColeta.detalhes.map(d => ({
+                                chave: d.chave,
+                                valor: "" // Valor limpo para nova entrada
+                            }));
+
+                            setMarkerToEdit({
+                                ...ponto,
+                                detalhes: template,
+                                id: ponto.id // Referência para vincular a nova coleta
                             });
+                            setEditMode(false); // Não é edição do registro antigo, é criação de um novo
+                            setNewMarkerCoords({ latitude: ponto.lat, longitude: ponto.lng });
                             setModalVisible(true);
                         }
                     } catch (e) {
-                        console.log('[WebView Error]:', e.message);
+                        console.log('[WebView Message Error]:', e.message);
                     }
                 }}
             />
@@ -250,30 +263,12 @@ const MapScreen = ({ showHeatmap, showMarkers, mapTheme, filters, userRole, user
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.white
-    },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: COLORS.white
-    },
-    webview: {
-        flex: 1,
-        backgroundColor: COLORS.white
-    },
-    loadingTextInitial: {
-        marginTop: 10,
-        color: COLORS.primaryDark,
-        fontSize: 16,
-        fontWeight: '600'
-    },
-    // Estilo novo do Loading (Pílula no topo)
+    container: { flex: 1, backgroundColor: COLORS.white },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white },
+    webview: { flex: 1, backgroundColor: COLORS.white },
     loadingPill: {
         position: 'absolute',
-        top: 60, // Abaixo da Status Bar
+        top: 60,
         alignSelf: 'center',
         backgroundColor: COLORS.overlay,
         borderRadius: 30,
@@ -282,19 +277,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         elevation: 4,
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 3.84,
         zIndex: 10,
     },
-    loadingPillText: {
-        color: COLORS.primaryDark,
-        marginLeft: 8,
-        fontWeight: 'bold',
-        fontSize: 14
-    },
-    // Estilo do Botão Flutuante (FAB)
+    loadingPillText: { color: COLORS.primaryDark, marginLeft: 8, fontWeight: 'bold', fontSize: 14 },
     actionButton: {
         position: 'absolute',
         bottom: 40,
@@ -305,44 +290,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 6,
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4.65,
         zIndex: 20,
     },
-    // Estilo do Card de Erro
-    errorCard: {
-        position: 'absolute',
-        top: 110,
-        left: 20,
-        right: 20,
-        backgroundColor: COLORS.danger,
-        borderRadius: 15,
-        padding: 15,
-        alignItems: 'center',
-        elevation: 5,
-        zIndex: 15,
-    },
-    errorText: {
-        color: 'white',
-        textAlign: 'center',
-        marginTop: 5,
-        marginBottom: 10,
-        fontSize: 14
-    },
-    retryButton: {
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    retryText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 12
-    },
-    // Instrução flutuante quando está adicionando
     instructionPill: {
         position: 'absolute',
         bottom: 120,
@@ -352,11 +301,7 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 20,
     },
-    instructionText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 14
-    }
+    instructionText: { color: 'white', fontWeight: 'bold', fontSize: 14 }
 });
 
 export default MapScreen;
