@@ -6,8 +6,4 @@ SQLAlchemy==2.0.31
 psycopg2-binary 
 python-dotenv==1.0.1
 cloudinary==1.44.1
-<<<<<<< HEAD
 gunicorn
-=======
-gunicorn
->>>>>>> 97bbfcece64908cae9667e1302e2db6bd0e11893
